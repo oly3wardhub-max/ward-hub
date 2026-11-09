@@ -332,7 +332,7 @@
       WH.call('youthAgendas', { date: yaDate }).then(d => { YA = d; yaDate = d.date; yaDraw(); }).catch(err);
     }
   };
-  const YA_F = [['Conducting', 'Who conducts'], ['Opening prayer', 'Who'], ['Spiritual thought', 'Who, and on what'], ['Business', 'Activities, service, invitations…'], ['Lesson', 'Topic and who teaches'], ['Closing prayer', 'Who'], ['Notes', '']];
+  const YA_F = [['Conducting', 'Who conducts'], ['Opening prayer', 'Who'], ['Spiritual thought', 'Who, and on what'], ['Business', 'Activities, service, invitations…'], ['Lesson', 'This week\'s FSY lesson'], ['Introduces the lesson', 'Who'], ['Helps teach', 'Who'], ['Closing prayer', 'Who'], ['Notes', '']];
   const yaKey = c => c.org + '|' + c.cls;
   function yaText(c) { const r = c.row; return `${c.cls} · ${WH.fmt(YA.date, { weekday: 'long', month: 'long', day: 'numeric' })}\n` + YA_F.filter(([k]) => r[k]).map(([k]) => `${k}: ${r[k]}`).join('\n'); }
   function yaDraw() {
@@ -341,20 +341,24 @@
     let h = `<div class="seg" style="flex-wrap:wrap">${YA.sundays.map(d => `<button class="${d === YA.date ? 'on' : ''}" data-act="yaDate" data-d="${d}">${esc(fmt(d))}</button>`).join('')}</div>`;
     if (YA.classes.length > 1) h += `<div class="seg" style="flex-wrap:wrap">${YA.classes.map(x => `<button class="${yaKey(x) === yaCls ? 'on' : ''}" data-act="yaCls" data-k="${esc(yaKey(x))}">${esc(x.cls)}</button>`).join('')}</div>`;
     h += `<datalist id="dl-ya">${c.names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>`;
-    h += `<div class="section-h big"><span>${esc(c.cls)}</span><span class="chip ${c.saved ? 'green' : ''}" id="yaSt">${c.saved ? 'Saved' : 'Not saved yet'}</span></div><div class="list">` + YA_F.map(([k, ph]) => /Business|Lesson|Notes|thought/.test(k)
+    h += `<div class="section-h big"><span>${esc(c.cls)}</span><span class="chip ${c.saved ? 'green' : ''}" id="yaSt">${c.saved ? 'Saved' : c.suggested ? 'Suggested turns' : 'Not saved yet'}</span></div>`
+      + (!c.saved && c.suggested ? `<div class="list"><div class="row wrap"><div class="main"><div class="t">Turns are filled in for you</div><div class="s">Whoever has waited longest gets a part, and no one repeats last week's. Change any name, then keep them.</div></div><button class="btn small" data-act="yaKeep">Keep</button></div></div>` : '')
+      + (c.link ? `<div class="btns"><a class="btn gray" style="text-decoration:none;text-align:center" target="_blank" rel="noopener" href="${esc(c.link)}">Open this week's lesson</a></div>` : '')
+      + '<div class="list">' + YA_F.map(([k, ph]) => /Business|Lesson|Notes|thought/.test(k)
       ? `<div class="field col"><label>${esc(k)}</label><textarea class="yain" data-k="${esc(k)}" placeholder="${esc(ph)}">${esc(r[k] || '')}</textarea></div>`
       : `<div class="field"><label>${esc(k)}</label><input class="yain" data-k="${esc(k)}" list="dl-ya" value="${esc(r[k] || '')}" placeholder="${esc(ph)}"></div>`).join('') + '</div>';
     if (c.lastBusiness && !r.Business) h += `<p class="foot">Last time's business: ${esc(c.lastBusiness)}</p>`;
     h += `<div class="btns"><button class="btn gray" data-act="yaShare">Share the agenda</button></div><p class="foot">Changes save as you go. The class presidency, their advisers and the bishopric see this. Names only, never phone numbers.</p>`;
     $b().innerHTML = h;
     document.querySelectorAll('.yain').forEach(inp => inp.addEventListener('change', async () => {
-      const row = { Date: YA.date, Organization: c.org, Class: c.cls }; row[inp.dataset.k] = inp.value.trim();
+      const row = c.saved ? { Date: YA.date, Organization: c.org, Class: c.cls } : Object.assign({}, r, { Date: YA.date, Organization: c.org, Class: c.cls }); row[inp.dataset.k] = inp.value.trim();
       try { await WH.call('youthAgendaSave', { row }); r[inp.dataset.k] = row[inp.dataset.k]; c.saved = true; const st = document.getElementById('yaSt'); if (st) { st.textContent = 'Saved'; st.className = 'chip green'; } WH.toast('Saved', true); } catch (e) { WH.toast(e.message); }
     }));
   }
   Object.assign(WH.act, {
     yaDate(el) { yaDate = el.dataset.d; WH.routes.youthagenda.view(); },
     yaCls(el) { yaCls = el.dataset.k; yaDraw(); },
+    async yaKeep() { const c = YA.classes.find(x => yaKey(x) === yaCls); document.querySelectorAll('.yain').forEach(i => { c.row[i.dataset.k] = i.value.trim(); }); try { await WH.call('youthAgendaSave', { row: Object.assign({}, c.row, { Date: YA.date, Organization: c.org, Class: c.cls }) }); c.saved = true; WH.toast('Saved', true); yaDraw(); } catch (e) { WH.toast(e.message); } },
     async yaShare() { const c = YA.classes.find(x => yaKey(x) === yaCls), t = yaText(c); try { if (navigator.share) await navigator.share({ text: t }); else { await navigator.clipboard.writeText(t); WH.toast('Copied', true); } } catch (e) { } }
   });
 

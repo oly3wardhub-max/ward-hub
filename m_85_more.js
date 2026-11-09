@@ -1,96 +1,18 @@
-/* Newsletters, permission forms, funerals, Ask the Hub, and the email preview and backups on Health. */
+/* Permission forms, funerals, Ask the Hub, and the email preview and backups on Health. */
 (function () {
   const WH = window.WH = window.WH || {}; WH.routes = WH.routes || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || [];
   const ic = p => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
   const orgs = () => (WH.S.boot && WH.S.boot.me.orgs) || [];
   const leads = list => WH.isBish() || list.some(o => orgs().indexOf(o) >= 0);
   WH.more.push(
-    { title: 'Newsletter', sub: 'Write it once; send by email', href: '#/x/newsletter', icon: ic('<rect x="3" y="3.5" width="14" height="13" rx="2"/><path d="M6 7.5h8M6 10.5h8M6 13.5h5"/>'), color: '#FF2D55', order: 14, show: () => leads(['Relief Society', 'Elders Quorum']), group: 'Leaders' },
     { title: 'Permission forms', sub: 'Who has turned them in for each trip', href: '#/x/permits', icon: ic('<path d="M6 2.5h6l4 4v11H6z"/><path d="M12 2.5v4h4M8.5 12l2 2 3.5-4"/>'), color: '#5AC8FA', order: 15, show: () => leads(['Young Women', 'Young Men', 'Primary']), group: 'Leaders' },
     { title: 'Funerals', sub: 'Plan, reserve the building, print the order of service', href: '#/x/funerals', icon: ic('<path d="M10 2.5v15M5.5 7h9"/>'), color: '#8E8E93', order: 34, show: () => WH.isBish() || WH.can('clerk'), group: 'Leaders' },
     { title: 'Ask the Hub', sub: 'A quick answer from the calendar and plans', href: '#/x/ask', icon: ic('<circle cx="10" cy="10" r="7.5"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14.5v.01"/>'), color: '#5856D6', order: 16, show: () => WH.isBish() || WH.can('leader') || WH.can('clerk'), group: 'Leaders' }
   );
   const back = { back: '#/more', backLabel: 'More' };
   const err = e => { document.getElementById('body').innerHTML = WH.errorBox(e.message); };
-  const plain = html => { const d = document.createElement('div'); d.innerHTML = html.replace(/<(p|div|li|br)[^>]*>/g, '\n$&'); return d.textContent.replace(/\n{3,}/g, '\n\n').trim(); };
 
-  /* ---------------- Newsletter ---------------- */
-  let NL = null, NV = null;
-  WH.routes.newsletter = {
-    view(args) {
-      if (args && args[0]) return nlOpen(decodeURIComponent(args[0]));
-      WH.screen('Newsletter', 'Write it in the app, then send it from your own email', WH.skeleton(4), Object.assign({ right: '<span class="nladd"></span>' }, back));
-      WH.call('newsletters', {}).then(d => { NL = d; nlDraw(); }).catch(err);
-    }
-  };
-  function nlDraw() {
-    const { esc, I, fmt } = WH, d = NL;
-    document.querySelectorAll('.nladd').forEach(x => x.innerHTML = `<button class="btn small" data-act="nlNew">${I.plus} New</button>`);
-    document.getElementById('body').innerHTML = `<div class="section-h"><span>Who gets it</span></div><div class="list">${d.orgs.map(o => `<div class="row"><div class="main"><div class="t">${esc(o.org)}</div><div class="s">${o.group ? 'Your newsletter list' : o.org === 'Ward' ? 'Every adult with an email' : 'Every ' + (o.org === 'Relief Society' ? 'sister' : 'brother') + ' with an email'}</div></div><span class="chip">${o.count}</span></div>`).join('')}</div>
-      <p class="foot">To send to a smaller list: More › Messages, pick the people, tap Save a new group, and name it Newsletter.</p>
-      <div class="section-h"><span>Issues</span></div><div class="list">${d.list.length ? d.list.map(n => `<button class="row" data-go="#/x/newsletter/${encodeURIComponent(n.ID)}"><div class="main"><div class="t">${esc(n.Subject || 'Untitled')}</div><div class="s">${esc(n.Organization)} · ${esc(fmt(n.Date))}</div></div><span class="chip ${n.Status === 'Sent' ? 'green' : ''}">${esc(n.Status || 'Draft')}</span>${I.chev}</button>`).join('') : '<div class="empty">No newsletters yet. Tap New.</div>'}</div>`;
-  }
-  const nlFields = () => [{ name: 'Organization', type: 'select', options: NL.orgs.map(o => o.org) }, { name: 'Subject' }, { name: 'Date', label: 'Date (sets the birthday month)', type: 'date' }, { name: 'Intro', type: 'textarea' },
-    { name: 'Items', label: 'Items · # starts a heading · [lessons] [birthdays] [stake calendar] [ward calendar] [new members] fill themselves in', type: 'textarea' }, { name: 'Attachment', label: 'Stake memo or flyer link', ph: 'https://…' }, { name: 'Include calendar', label: 'Add the ward calendar at the end', type: 'toggle' }];
-  const dayName = d => WH.fmt(d, { weekday: 'short', month: 'short', day: 'numeric' });
-  function nlOpen(id) {
-    WH.screen('Newsletter', '', WH.skeleton(3), { back: '#/x/newsletter', backLabel: 'Newsletter' });
-    Promise.all([NL ? NL : WH.call('newsletters', {}), WH.call('newsletterView', { id })]).then(([l, v]) => {
-      NL = l; NV = Object.assign(v, { id, row: l.list.find(n => n.ID === id) || {} });
-      const { esc } = WH, n = NV.row;
-      const st = v.status || 'Draft', sched = /Scheduled|Sending/.test(st);
-      const planTxt = v.plan.map(b => `${dayName(b.date)} (${b.count})`).join(' and ');
-      const planRows = v.plan.map(b => `<div class="row"><span class="check ${b.sent ? 'on' : ''}"></span><div class="main"><div class="t">${esc(dayName(b.date))}</div><div class="s">${b.count} addresses${b.sent ? ' · sent ' + esc(String(b.sent).slice(11)) : ' · about 7 AM'}</div></div></div>`).join('');
-      document.getElementById('body').innerHTML = `<div class="list"><div class="row"><div class="main"><div class="t" style="font-weight:600">${esc(n.Subject || 'Untitled')}</div><div class="s">${esc(n.Organization)} · ${NV.emails.length} addresses · ${esc(st)}${n['Sent on'] ? ' ' + esc(WH.fmt(n['Sent on'])) : ''}</div></div></div></div>
-        ${sched ? `<div class="section-h"><span>Sending from the ward account</span></div><div class="list">${planRows}</div><div class="btns"><button class="btn gray" data-act="nlCancel">Stop sending</button></div>`
-          : st === 'Sent' ? '<div class="btns"><button class="btn gray" data-act="nlEdit">Edit</button></div>'
-          : `<div class="btns"><button class="btn" data-act="nlMine">Send from my email</button><button class="btn gray" data-act="nlEdit">Edit</button></div>
-             <div class="btns"><button class="btn gray" data-act="nlSched">${v.paused ? 'Send from the ward account' : 'Send in ' + v.plan.length + ' parts: ' + esc(planTxt)}</button></div>
-             <p class="foot">Google lets the ward account email 100 addresses a day, so the Hub splits the list over the ${v.plan.length > 2 ? v.plan.length : 'two'} quietest days this week${v.paused ? ' once emails are turned on (now: ' + esc(planTxt) + ')' : ''}.</p>`}
-        <div class="section-h"><span>Preview</span></div>
-        <iframe sandbox="" title="Newsletter preview" srcdoc="${esc(v.html)}" style="width:100%;height:560px;border:0;border-radius:12px;background:#fff"></iframe>
-        ${sched ? '' : '<div class="btns"><button class="btn red" data-act="nlDel">Remove</button></div>'}`;
-    }).catch(err);
-  }
-  async function nlStart(org) {
-    try { const t = await WH.call('newsletterTemplate', { org }); WH.form('New newsletter', nlFields(), t.row, async row => { const r = await WH.call('newsletterSave', { row }); NL = null; location.hash = '#/x/newsletter/' + encodeURIComponent(r.id); }); } catch (e) { WH.toast(e.message); }
-  }
-  async function copyRich(html) {
-    try { if (window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([plain(html)], { type: 'text/plain' }) })]); return true; } } catch (e) { }
-    try { await navigator.clipboard.writeText(plain(html)); return true; } catch (e) { return false; }
-  }
-  Object.assign(WH.act, {
-    nlNew() {
-      if (NL.orgs.length === 1) return nlStart(NL.orgs[0].org);
-      WH.openSheet(`<header><button class="link" data-act="close">Cancel</button><h2>Newsletter for</h2><span style="min-width:64px"></span></header><div class="list">${NL.orgs.map(o => `<button class="row" data-act="nlFor" data-org="${WH.esc(o.org)}"><div class="main"><div class="t">${WH.esc(o.org)}</div></div>${WH.I.chev}</button>`).join('')}</div>`);
-    },
-    nlFor(el) { WH.closeSheet(); setTimeout(() => nlStart(el.dataset.org), 250); },
-    nlEdit() { WH.form('Edit newsletter', nlFields(), NV.row, async row => { row.ID = NV.id; row.Status = NV.row.Status; await WH.call('newsletterSave', { row }); NL = null; nlOpen(NV.id); }); },
-    async nlDel() { if (!confirm('Remove this newsletter?')) return; try { await WH.call('newsletterRemove', { id: NV.id }); NL = null; location.hash = '#/x/newsletter'; } catch (e) { WH.toast(e.message); } },
-    nlMine() {
-      const { esc } = WH, bcc = NV.emails.join(','), subj = NV.subject || 'Newsletter';
-      const href = 'mailto:?subject=' + encodeURIComponent(subj) + (bcc.length < 1800 ? '&bcc=' + encodeURIComponent(bcc) : '');
-      WH.openSheet(`<header><span style="min-width:64px"></span><h2>Send from my email</h2><button class="link r" data-act="close">Done</button></header>
-        <div class="list"><button class="row" id="nl1"><div class="main"><div class="t">1. Copy the newsletter</div><div class="s">With its headings and links</div></div></button>
-        <button class="row" id="nl2"><div class="main"><div class="t">2. Copy the ${NV.emails.length} addresses</div><div class="s">Paste them into Bcc, so no one sees the others</div></div></button>
-        <a class="row" href="${esc(href)}" style="text-decoration:none;color:inherit"><div class="main"><div class="t">3. Open my email</div><div class="s">Paste the newsletter into the message${bcc.length < 1800 ? '' : ' and the addresses into Bcc'}</div></div></a>
-        <button class="row" id="nl4"><div class="main"><div class="t">4. Mark as sent</div><div class="s">So everyone knows it went out</div></div></button></div>
-        <p class="foot">A personal Gmail can send to about 500 addresses a day, so the whole list fits in one email.</p>`);
-      document.getElementById('nl1').onclick = async () => WH.toast(await copyRich(NV.html) ? 'Newsletter copied' : 'Couldn\'t copy on this phone', true);
-      document.getElementById('nl2').onclick = async () => { try { await navigator.clipboard.writeText(NV.emails.join(', ')); WH.toast('Addresses copied', true); } catch (e) { WH.toast('Couldn\'t copy on this phone'); } };
-      document.getElementById('nl4').onclick = async () => { try { await WH.call('newsletterMarkSent', { id: NV.id, count: NV.emails.length }); WH.closeSheet(); NL = null; nlOpen(NV.id); WH.toast('Marked as sent', true); } catch (e) { WH.toast(e.message); } };
-    },
-    async nlSched(el) {
-      if (NV.paused) { WH.toast('Emails are paused. Use "Send from my email" for now.'); return; }
-      if (!confirm('Email this to ' + NV.emails.length + ' people from the ward account, in ' + NV.plan.length + ' parts (' + NV.plan.map(b => dayName(b.date)).join(' and ') + ')?')) return;
-      el.innerHTML = '<span class="spin"></span>';
-      try { const r = await WH.call('newsletterSchedule', { id: NV.id }); WH.toast('Scheduled: ' + r.plan.map(b => dayName(b.date)).join(' and '), true); NL = null; nlOpen(NV.id); } catch (e) { WH.toast(e.message); nlOpen(NV.id); }
-    },
-    async nlCancel() {
-      if (!confirm('Stop sending? Parts already sent stay sent.')) return;
-      try { const r = await WH.call('newsletterCancel', { id: NV.id }); WH.toast(r.sent ? 'Stopped after ' + r.sent : 'Back to draft', true); NL = null; nlOpen(NV.id); } catch (e) { WH.toast(e.message); }
-    }
-  });
+  /* The newsletter lives in m_94_newsletter.js. */
 
   /* ---------------- Permission forms ---------------- */
   /* Paper forms: tap each name as they come in. Online: each family gets a text with a personal link (permit.html?t=…);
