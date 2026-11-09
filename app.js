@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.1.0';
+  const VERSION = '2.2.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -373,7 +373,7 @@
     sh.addEventListener('touchend', e => { if (y0 != null) { const dy = (e.changedTouches[0].clientY - y0); sh.style.transform = ''; if (dy > 110) closeSheet(); } y0 = null; });
   }
   function closeSheet() { const r = $('#sheet-root'); if (r) r.innerHTML = ''; document.body.style.overflow = ''; }
-  function form(title, fields, vals, onSave, onDelete) {
+  function form(title, fields, vals, onSave, onDelete, extra) {
     const f = fields.map(x => {
       const v = vals[x.name] == null ? '' : vals[x.name];
       if (x.type === 'select') return `<div class="field"><label>${esc(x.label || x.name)}</label><select name="${esc(x.name)}">${['', ...x.options].map(o => `<option ${String(o) === String(v) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
@@ -382,7 +382,7 @@
       return `<div class="field"><label>${esc(x.label || x.name)}</label><input name="${esc(x.name)}" value="${esc(v)}" ${x.type === 'number' ? 'inputmode="numeric"' : ''} ${x.type === 'date' ? 'type="date"' : ''} ${x.list ? 'list="dl-' + x.list + '"' : ''} placeholder="${esc(x.ph || '')}" autocomplete="off"></div>`;
     }).join('');
     const lists = [...new Set(fields.filter(x => x.list).map(x => x.list))].map(l => `<datalist id="dl-${l}">${(DATALISTS[l] || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist>`).join('');
-    openSheet(`<header><button class="link" data-act="close">Cancel</button><h2>${esc(title)}</h2><button class="link r" id="sv">Save</button></header><div class="list">${f}</div>${lists}${onDelete ? '<div class="btns"><button class="btn red" id="del">Remove</button></div>' : ''}`);
+    openSheet(`<header><button class="link" data-act="close">Cancel</button><h2>${esc(title)}</h2><button class="link r" id="sv">Save</button></header>${extra || ''}<div class="list">${f}</div>${lists}${onDelete ? '<div class="btns"><button class="btn red" id="del">Remove</button></div>' : ''}`);
     $('#sv').onclick = async () => {
       const row = {}; fields.forEach(x => { const el = $(`.sheet [name="${x.name}"]`); row[x.name] = x.type === 'toggle' ? el.checked : el.value.trim(); });
       $('#sv').innerHTML = '<span class="spin"></span>';
@@ -441,9 +441,10 @@
   };
   function partForm(p, existing) {
     const date = p.Date;
-    form(existing ? 'Edit' : 'Add to program', [{ name: 'Role', type: 'select', options: ROLES }, { name: 'Person', list: 'people' }, { name: 'Topic' }, { name: 'Status', type: 'select', options: ['Idea', 'Asked', 'Accepted', 'Declined', 'Done'] }, { name: 'Order', type: 'number' }, { name: 'Notes', type: 'textarea' }], p,
+    form(existing ? 'Edit' : 'Add to program', [{ name: 'Role', type: 'select', options: ROLES }, { name: 'Person', list: 'people' }, { name: 'Topic' }, { name: 'Minutes', type: 'number' }, { name: 'Status', type: 'select', options: ['Idea', 'Asked', 'Accepted', 'Declined', 'Done'] }, { name: 'Order', type: 'number' }, { name: 'Notes', type: 'textarea' }], p,
       async row => { row.Date = date; if (existing) row.ID = p.ID; if (row.Status === 'Asked' && !p['Asked on']) row['Asked on'] = ymd(today()); await call('save', { tab: 'Participants', row }); store.del('c:sunday:' + date); store.del('c:today'); viewSunday(date); },
-      existing ? async () => { await call('remove', { tab: 'Participants', id: p.ID }); store.del('c:sunday:' + date); viewSunday(date); } : null);
+      existing ? async () => { await call('remove', { tab: 'Participants', id: p.ID }); store.del('c:sunday:' + date); viewSunday(date); } : null,
+      existing && WH.isBish() && p.Person ? `<div class="btns" style="margin:0 0 12px"><button class="btn gray" data-act="invitePart" data-id="${esc(p.ID)}" data-date="${esc(date)}">${I.msg.replace('<svg', '<svg width="18" height="18"')} Text an invitation</button></div>` : '');
   }
 
   /* ---------- shared with the feature files (program.js, messages.js, …) ---------- */
