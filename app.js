@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.6.0';
+  const VERSION = '2.6.1';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -190,7 +190,7 @@
       h += `<div class="section-h big"><span>Needs you</span>${d.needs.length ? `<span class="chip">${d.needs.length}</span>` : ''}</div>`;
       h += d.needs.length ? '<div class="list">' + d.needs.map(n => {
         const late = n.due && n.due < ymd(today());
-        const go = n.kind === 'sunday' ? `data-go="#/sunday/${n.id}"` : n.kind === 'task' ? `data-act="task" data-id="${esc(n.id)}"` : n.kind === 'announcements' ? `data-go="#/x/announcements"` : n.kind === 'lcr' ? `data-go="#/x/changes"` : n.kind === 'callings' ? `data-go="#/x/changes"` : n.kind === 'inbox' ? `data-go="#/x/inbox"` : n.kind === 'training' ? `data-go="#/x/training"` : '';
+        const go = n.kind === 'sunday' ? `data-go="#/sunday/${n.id}"` : n.kind === 'task' ? `data-act="task" data-id="${esc(n.id)}"` : n.kind === 'announcements' ? `data-go="#/x/announcements"` : n.kind === 'lcr' ? `data-go="#/x/changes"` : n.kind === 'callings' ? `data-go="#/x/changes"` : n.kind === 'inbox' ? `data-go="#/x/inbox"` : n.kind === 'training' ? `data-go="#/x/training"` : n.kind === 'teach' && n.link ? `data-act="openUrl" data-url="${esc(n.link)}"` : '';
         return `<button class="row wrap" ${go}><div class="main"><div class="t">${esc(n.title)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>${n.due ? `<span class="chip ${late ? 'red' : rel(n.due) === 'Today' ? 'orange' : ''}">${esc(rel(n.due))}</span>` : ''}${go ? I.chev : ''}</button>`;
       }).join('') + '</div>' : `<div class="list"><div class="empty">Nothing needs you right now.</div></div>`;
       if (d.sunday) {
@@ -399,6 +399,7 @@
   /* ---------- actions ---------- */
   const ACT = {
     close: closeSheet,
+    openUrl: el => { window.open(el.dataset.url, '_blank', 'noopener'); },
     reload: () => route(),
     demo: () => { store.set('demo', true); store.del('boot'); S.boot = null; location.hash = '#/today'; route(); },
     signout: () => { if (S.demo) { store.del('demo'); signOut(); return; } if (confirm('Sign out on this phone? You will need your link again.')) signOut('Signed out'); },
