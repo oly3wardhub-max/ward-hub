@@ -1,20 +1,32 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Ward Calendar</title><meta name="robots" content="noindex,nofollow">
-<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.9.0">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.9.1">
 </head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Calendar</h1></div><div class="skeleton"></div><div class="skeleton"></div></main>
-<script src="config.js?v=2.9.0"></script>
+<script src="config.js?v=2.9.1"></script>
 <script>
 (async function(){
   const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api;
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const pd=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  const get=k=>{try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}, put=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}};
   let d; try{ d=await fetch(api,{method:'POST',body:JSON.stringify({action:'publicCalendar'})}).then(r=>r.json()); }catch(e){ m.innerHTML+='<p class="subtitle">Couldn\'t load the calendar.</p>'; return; }
-  let h='<div class="largetitle"><h1>Calendar</h1></div><p class="subtitle">'+esc(d.ward||'')+'</p>', month='';
-  (d.events||[]).forEach(e=>{ const mo=pd(e.date).toLocaleDateString(undefined,{month:'long',year:'numeric'}); if(mo!==month){ if(month) h+='</div>'; h+='<div class="section-h"><span>'+esc(mo)+'</span></div><div class="list">'; month=mo; }
-    h+='<div class="row"><div style="width:44px;text-align:center;flex:none"><div style="font-size:11px;color:var(--sub);font-weight:600">'+esc(pd(e.date).toLocaleDateString(undefined,{weekday:'short'}).toUpperCase())+'</div><div style="font-size:20px;font-weight:700">'+pd(e.date).getDate()+'</div></div><div class="main"><div class="t">'+esc(e.title)+'</div><div class="s">'+[e.time?(e.time+(e.endTime?'–'+e.endTime:'')):'',e.place,e.org].filter(Boolean).map(esc).join(' · ')+'</div></div></div>'; });
-  if(month) h+='</div>'; else h+='<div class="list"><div class="empty">Nothing on the public calendar yet.</div></div>';
-  h+='<div class="btns"><a class="btn gray" href="'+esc(api.replace(/^https:/,'webcal:'))+'?action=ics">Add to my calendar</a></div><div class="btns"><a class="btn gray" href="building.html">Request the building</a></div>';
-  m.innerHTML=h;
+  const ev=d.events||[], orgs=[...new Set(ev.map(e=>e.org||'Ward'))].sort((a,b)=>a==='Ward'?-1:b==='Ward'?1:a.localeCompare(b));
+  let off=get('cal:off')||[];
+  const draw=()=>{
+    const on=orgs.filter(o=>off.indexOf(o)<0);
+    let h='<div class="largetitle"><h1>Calendar</h1></div><p class="subtitle">'+esc(d.ward||'')+'</p>';
+    if(orgs.length>1) h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin:4px 2px 2px">'+orgs.map(o=>'<button class="chip '+(off.indexOf(o)<0?'blue':'')+'" data-org="'+esc(o)+'" style="border:0;font-size:14px;padding:6px 12px;cursor:pointer" aria-pressed="'+(off.indexOf(o)<0)+'">'+esc(o)+'</button>').join('')+'</div><p class="foot" style="margin:6px 4px 0">Tap to show or hide an organization. This phone remembers your choice.</p>';
+    let month='', n=0;
+    ev.filter(e=>on.indexOf(e.org||'Ward')>=0).forEach(e=>{ n++; const mo=pd(e.date).toLocaleDateString(undefined,{month:'long',year:'numeric'}); if(mo!==month){ if(month) h+='</div>'; h+='<div class="section-h"><span>'+esc(mo)+'</span></div><div class="list">'; month=mo; }
+      h+='<div class="row"><div style="width:44px;text-align:center;flex:none"><div style="font-size:11px;color:var(--sub);font-weight:600">'+esc(pd(e.date).toLocaleDateString(undefined,{weekday:'short'}).toUpperCase())+'</div><div style="font-size:20px;font-weight:700">'+pd(e.date).getDate()+'</div></div><div class="main"><div class="t">'+esc(e.title)+'</div><div class="s">'+[e.time?(e.time+(e.endTime?'–'+e.endTime:'')):'',e.place,e.org].filter(Boolean).map(esc).join(' · ')+'</div></div></div>'; });
+    if(month) h+='</div>'; else h+='<div class="list"><div class="empty">'+(ev.length?'Nothing for the organizations you picked.':'Nothing on the public calendar yet.')+'</div></div>';
+    const feed=api.replace(/^https:/,'webcal:')+'?action=ics'+(on.length&&on.length<orgs.length?'&orgs='+encodeURIComponent(on.join(',')):'');
+    h+='<div class="btns"><a class="btn gray" href="'+esc(feed)+'">Add '+(on.length<orgs.length?'these':'it')+' to my phone\'s calendar</a></div><div class="btns"><button class="btn gray" id="cp">Copy the calendar link</button></div><p class="foot">Your calendar keeps it up to date'+(on.length<orgs.length?', with only '+esc(on.join(', ')):'')+'. Android or Google Calendar: copy the link, then on a computer open Google Calendar › Other calendars › + › From URL.</p><div class="btns"><a class="btn gray" href="building.html">Request the building</a></div>';
+    m.innerHTML=h;
+    const cp=m.querySelector('#cp'); if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(feed.replace(/^webcal:/,'https:')); cp.textContent='Copied'; }catch(e){ prompt('Copy this link',feed.replace(/^webcal:/,'https:')); } };
+    m.querySelectorAll('[data-org]').forEach(b=>b.onclick=()=>{ const o=b.dataset.org; off=off.indexOf(o)<0?off.concat(o):off.filter(x=>x!==o); if(off.length>=orgs.length) off=off.filter(x=>x!==o); put('cal:off',off); draw(); });
+  };
+  draw();
 })();
 </script></body></html>
