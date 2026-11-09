@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ward Calendar</title><meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.3.0">
+</head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Calendar</h1></div><div class="skeleton"></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.3.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api;
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const pd=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  let d; try{ d=await fetch(api,{method:'POST',body:JSON.stringify({action:'publicCalendar'})}).then(r=>r.json()); }catch(e){ m.innerHTML+='<p class="subtitle">Couldn\'t load the calendar.</p>'; return; }
+  let h='<div class="largetitle"><h1>Calendar</h1></div><p class="subtitle">'+esc(d.ward||'')+'</p>', month='';
+  (d.events||[]).forEach(e=>{ const mo=pd(e.date).toLocaleDateString(undefined,{month:'long',year:'numeric'}); if(mo!==month){ if(month) h+='</div>'; h+='<div class="section-h"><span>'+esc(mo)+'</span></div><div class="list">'; month=mo; }
+    h+='<div class="row"><div style="width:44px;text-align:center;flex:none"><div style="font-size:11px;color:var(--sub);font-weight:600">'+esc(pd(e.date).toLocaleDateString(undefined,{weekday:'short'}).toUpperCase())+'</div><div style="font-size:20px;font-weight:700">'+pd(e.date).getDate()+'</div></div><div class="main"><div class="t">'+esc(e.title)+'</div><div class="s">'+[e.time?(e.time+(e.endTime?'–'+e.endTime:'')):'',e.place,e.org].filter(Boolean).map(esc).join(' · ')+'</div></div></div>'; });
+  if(month) h+='</div>'; else h+='<div class="list"><div class="empty">Nothing on the public calendar yet.</div></div>';
+  h+='<div class="btns"><a class="btn gray" href="'+esc(api.replace(/^https:/,'webcal:'))+'?action=ics">Add to my calendar</a></div><div class="btns"><a class="btn gray" href="building.html">Request the building</a></div>';
+  m.innerHTML=h;
+})();
+</script></body></html>

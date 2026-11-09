@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Request the Building</title><meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.3.0">
+<style>.screen{padding-bottom:40px}.busy{font-size:14px;color:var(--sub)}.field input,.field select{color:var(--text)}</style>
+</head><body><main class="screen" id="m"><div class="largetitle"><h1>Request the building</h1></div><div class="skeleton"></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.3.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api, $=s=>document.querySelector(s);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json());
+  let info; try{ info=await post({action:'buildingInfo'}); }catch(e){ m.innerHTML='<div class="largetitle"><h1>Request the building</h1></div><p class="subtitle">Couldn\'t load. Check your connection and try again.</p>'; return; }
+  if(!info.ok){ m.innerHTML='<p class="subtitle">'+esc(info.error)+'</p>'; return; }
+  const R=info.rules, times=[]; for(let h=6;h<=22;h++) for(const mm of ['00','30']){ const hh=(h%12)||12, ap=h<12?'AM':'PM'; times.push(hh+':'+mm+' '+ap); }
+  const opt=(a,v)=>a.map(x=>'<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>').join('');
+  m.innerHTML='<div class="largetitle"><h1>Request the building</h1></div><p class="subtitle">'+esc(R.building)+(info.ward?' · '+esc(info.ward):'')+'</p>'+
+   '<div class="list"><div class="field"><label>Your name</label><input id="name" autocomplete="name"></div><div class="field"><label>Phone</label><input id="phone" type="tel" autocomplete="tel"></div><div class="field"><label>Email</label><input id="email" type="email" autocomplete="email"></div></div>'+
+   '<div class="section-h"><span>When</span></div><div class="list"><div class="field"><label>Date</label><input id="date" type="date"></div><div class="field"><label>Start</label><select id="start">'+opt(times,'1:00 PM')+'</select></div><div class="field"><label>End</label><select id="end">'+opt(times,'3:00 PM')+'</select></div></div>'+
+   '<div id="busy" class="foot"></div>'+
+   '<div class="section-h"><span>Rooms</span></div><div class="list">'+R.rooms.map(r=>'<label class="field"><span style="flex:1">'+esc(r)+'</span><span class="toggle"><input type="checkbox" value="'+esc(r)+'" class="room"><span></span></span></label>').join('')+'</div>'+
+   '<div class="section-h"><span>What for</span></div><div class="list"><div class="field"><label>For</label><select id="kind"><option>Family</option><option>Ward</option><option>Stake</option><option>Other</option></select></div><div class="field col"><label>Purpose</label><textarea id="purpose" placeholder="Family dinner, wedding luncheon, ward activity…"></textarea></div></div>'+
+   '<p class="foot">Family reservations are up to '+R.hours+' hours, '+R.maxOpen+' at a time, up to '+R.weeks+' weeks ahead. Within '+R.lastMinuteDays+' days of a date, you can add more. On busy holidays, one per family.</p>'+
+   '<div class="btns"><button class="btn" id="go">Send request</button></div><div id="msg" class="foot" style="text-align:center;font-size:16px"></div>';
+  const showBusy=()=>{ const d=$('#date').value; if(!d){$('#busy').textContent='';return;} const b=info.busy.filter(x=>x.date===d); const hol=info.holidays[d];
+    $('#busy').innerHTML=(hol?'<b>'+esc(hol)+'</b>: one reservation per family. ':'')+(b.length?'Already reserved that day: '+b.map(x=>esc(x.start)+'–'+esc(x.end)+' ('+esc(x.rooms)+')').join('; '):'Nothing else is reserved that day.'); };
+  $('#date').addEventListener('change',showBusy);
+  $('#go').onclick=async()=>{
+    const rooms=[...document.querySelectorAll('.room:checked')].map(x=>x.value).join(', ');
+    const req={name:$('#name').value.trim(),phone:$('#phone').value.trim(),email:$('#email').value.trim(),date:$('#date').value,start:$('#start').value,end:$('#end').value,rooms,kind:$('#kind').value,purpose:$('#purpose').value.trim()};
+    $('#go').disabled=true; $('#msg').innerHTML='<span class="spin"></span>';
+    try{ const r=await post({action:'buildingRequest',request:req}); if(r.ok){ m.innerHTML='<div class="welcome" style="min-height:70vh"><h1>Request sent</h1><p>'+esc(new Date(req.date+'T12:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}))+', '+esc(req.start)+'–'+esc(req.end)+'<br>'+esc(rooms)+'</p><p>The building scheduler will confirm with you.</p></div>'; } else { $('#msg').textContent=r.error||'Couldn\'t send.'; $('#go').disabled=false; } }
+    catch(e){ $('#msg').textContent='Couldn\'t send. Check your connection.'; $('#go').disabled=false; }
+  };
+})();
+</script></body></html>
