@@ -662,6 +662,7 @@ function onOpen() {
     .addItem('Set up or repair tabs', 'setUp')
     .addItem('Show my admin link', 'showMyLink')
     .addItem('Add imported sheets', 'mergeImports')
+    .addItem('Back up now', 'backupNow')
     .addToUi();
 }
 /* Builds every tab with its headings and the default settings. Safe to run again: it never deletes anything. */
@@ -696,6 +697,9 @@ function showMyLink() {
   var html = HtmlService.createHtmlOutput('<p style="font:14px Arial">Open this on your phone (it is your personal link):</p><textarea style="width:100%;height:90px">' + linkFor_(a) + '</textarea>').setWidth(460).setHeight(200);
   SpreadsheetApp.getUi().showModalDialog(html, 'Your Ward Hub link');
 }
+
+/* Spreadsheet menu: Ward Hub › Back up now. */
+function backupNow() { var r = backup_(true); try { SpreadsheetApp.getUi().alert('Backup: ' + r + '. Find it in Google Drive › Ward Hub backups.'); } catch (e) {} return r; }
 
 
 /* ================= Program: online (public) and printed ================= */
