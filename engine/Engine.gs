@@ -453,6 +453,10 @@ function today_view_(me) {
     var newAnn = rows_('Announcements').filter(function (a) { return a.Status === 'New'; });
     if (newAnn.length) needs.push({ kind: 'announcements', title: newAnn.length + ' announcement' + (newAnn.length > 1 ? 's' : '') + ' to approve', due: sunY, sub: newAnn[0].Organization });
   }
+  if (me.roles.clerk || me.roles.admin) {
+    var lcr = rows_('Callings').filter(function (c) { return c.Source === 'Hub' && c.Change && !c['Recorded in LCR'] && /Sustained|Set apart/.test(c.Status); });
+    if (lcr.length) needs.push({ kind: 'lcr', title: lcr.length + ' change' + (lcr.length > 1 ? 's' : '') + ' to record in LCR', sub: lcr.slice(0, 3).map(function (c) { return c.Person; }).join(', '), due: '' });
+  }
   if (me.roles.admin) {
     var inbox = rows_('Inbox').filter(function (i) { return i.Status === 'New'; }).length;
     if (inbox) needs.push({ kind: 'inbox', title: inbox + ' item' + (inbox > 1 ? 's' : '') + ' in the inbox', due: tY, sub: 'From scans and linked calendars' });
@@ -998,6 +1002,164 @@ ACTIONS.buildingDecide = function (req, me) {
   var status = { approve: 'Approved', decline: 'Declined', cancel: 'Cancelled' }[req.decision]; if (!status) throw new Error('Choose approve or decline');
   save_(me, 'Building', { ID: req.id, Status: status, 'Decided by': me.name, Notes: req.note || '' }, { system: true });
   return { status: status };
+};
+
+
+/* ================= People & callings: organizations, classes, calling changes, For LCR, LCR paste ================= */
+ACTIONS.org = function (req, me) {
+  var org = String(req.org || ''), tY = ymd_(today_());
+  var mine = isBishopric_(me) || me.roles.clerk || me.orgs.indexOf(org) >= 0 || (me.teachOrgs || []).indexOf(org) >= 0;
+  if (!mine) throw new Error('You can see your own organization.');
+  var lead = isBishopric_(me) || me.orgs.indexOf(org) >= 0;
+  var callings = rows_('Callings').filter(function (c) { return c.Organization === org && !/Released|Proposed/.test(c.Status); })
+    .map(function (c) { return { id: c.ID, calling: c.Calling, group: c.Group, person: c.Person, sustained: c.Sustained, setApart: c['Set apart'], status: c.Status }; });
+  var groups = {};
+  rows_('Groups').filter(function (g) { return g.Organization === org && (g.Kind === 'Class' || g.Kind === 'Quorum'); }).forEach(function (g) {
+    var k = g.Group; groups[k] = groups[k] || { name: k, kind: g.Kind, teachers: [], members: [], later: [] };
+    var item = { id: g.ID, person: g.Person, role: g.Role, period: g.Period, notes: g.Notes };
+    if (g.Role === 'Teacher') groups[k].teachers.push(item);
+    else if (periodOk_(g.Period, tY)) groups[k].members.push(item);
+    else if (String(g.Period).match(/^(\d{4}-\d\d)/) && RegExp.$1 > tY.slice(0, 7)) groups[k].later.push(item);
+  });
+  var list = Object.keys(groups).map(function (k) { var g = groups[k]; g.members.sort(function (a, b) { return a.person.localeCompare(b.person); }); return g; });
+  if (!lead) { var myk = nkey_(me.name); list = list.filter(function (g) { return g.teachers.some(function (t) { return nkey_(t.person) === myk; }); }); }
+  return { org: org, lead: lead, callings: callings, classes: list, open: rows_('Callings').filter(function (c) { return c.Organization === org && c.Status === 'Open'; }).map(function (c) { return { id: c.ID, calling: c.Calling }; }) };
+};
+/* Class lists: the presidency adds, moves or removes a member, or sets a teacher. */
+ACTIONS.classSet = function (req, me) {
+  var org = String(req.org || '');
+  if (!(isBishopric_(me) || me.orgs.indexOf(org) >= 0)) throw new Error('Only this organization\'s presidency changes its classes.');
+  var kind = org === 'Young Men' ? 'Quorum' : 'Class';
+  if (req.id && req.remove) { remove_(Object.assign({}, me, { roles: Object.assign({}, me.roles, { admin: 1 }) }), 'Groups', req.id); return {}; }
+  var person = String(req.person || '').trim(), group = String(req.group || '').trim();
+  if (!person || !group) throw new Error('Pick a person and a class.');
+  save_(me, 'Groups', { ID: req.id || '', Kind: kind, Organization: org, Group: group, Person: person, Role: req.role || 'Member', Period: req.period || '', Notes: req.notes || '' }, { system: true });
+  return {};
+};
+
+/* ---------- calling changes (bishopric) ---------- */
+var CALL_STEPS = ['Proposed', 'Extended', 'Sustained', 'Set apart'];
+ACTIONS.changes = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.clerk)) throw new Error('Calling changes are for the bishopric and clerks.');
+  var rows = rows_('Callings').filter(function (c) { return c.Source === 'Hub' && c.Change && !(c['Recorded in LCR'] && /Serving|Released/.test(c.Status)); });
+  return { changes: rows.map(function (c) { var o = {}; for (var k in c) if (k !== '_r') o[k] = c[k]; return o; }), steps: CALL_STEPS };
+};
+ACTIONS.changeSave = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Only the bishopric changes callings.');
+  var r = req.row || {};
+  if (!r.Person || !r.Calling) throw new Error('Add the person and the calling.');
+  r.Source = 'Hub'; if (!r.Status) r.Status = 'Proposed';
+  var id = save_(me, 'Callings', r, { system: true });
+  if (r.Status === 'Extended' && r.Sunday) addTaskOnce_('Sustain ' + r.Person + ' as ' + r.Calling + ' (' + r.Sunday + ')', 'Bishopric', r.Sunday, 'Calling change');
+  return { id: id };
+};
+ACTIONS.changeStep = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.clerk)) throw new Error('Only the bishopric and clerks move calling changes.');
+  var c = rows_('Callings').filter(function (x) { return x.ID === req.id; })[0]; if (!c) throw new Error('Not found');
+  var t = ymd_(today_()), row = { ID: c.ID };
+  if (req.step === 'recorded') {
+    row['Recorded in LCR'] = t; row.Status = /Release/.test(c.Change) && !/Call/.test(c.Change) ? 'Released' : 'Serving';
+    if (/Call/.test(c.Change) && !c.Sustained) row.Sustained = c.Sunday || t;
+    if (/release/i.test(c.Change)) rows_('Callings').filter(function (x) { return x.Source === 'LCR' && nkey_(x.Person) === nkey_(c.Person) && x.Status === 'Serving' && (x.Calling === c.Calling || /^Release$/.test(c.Change)); })
+      .forEach(function (x) { if (x.Calling === c.Calling || c.Change === 'Release') save_(null, 'Callings', { ID: x.ID, Status: 'Released' }, { system: true, quiet: true }); });
+  } else {
+    var i = CALL_STEPS.indexOf(c.Status), next = req.step || CALL_STEPS[Math.min(i + 1, CALL_STEPS.length - 1)];
+    if (!isBishopric_(me)) throw new Error('Only the bishopric moves a calling to ' + next + '.');
+    row.Status = next;
+    if (next === 'Sustained' && !c.Sustained) row.Sustained = c.Sunday || t;
+    if (next === 'Set apart' && !c['Set apart']) row['Set apart'] = t;
+  }
+  save_(me, 'Callings', row, { system: true });
+  return {};
+};
+function addTaskOnce_(task, owner, due, source) {
+  if (rows_('Tasks').some(function (t) { return t.Task === task; })) return;
+  save_(null, 'Tasks', { Task: task, Owner: owner, Organization: 'Bishopric', Due: due, Status: 'Not started', Source: source, Created: ymd_(today_()) }, { system: true, quiet: true });
+}
+/* What the clerk should record in LCR. */
+ACTIONS.forLcr = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.clerk)) throw new Error('This list is for the clerks and bishopric.');
+  var items = rows_('Callings').filter(function (c) { return c.Source === 'Hub' && c.Change && !c['Recorded in LCR'] && /Sustained|Set apart/.test(c.Status); })
+    .map(function (c) { return { id: c.ID, what: (c.Change === 'Release' ? 'Release ' : c.Change === 'Call and release' ? 'Call (and release) ' : 'Call ') + c.Person + (c.Change === 'Release' ? ' from ' : ' as ') + c.Calling, org: c.Organization, sustained: c.Sustained || c.Sunday, setApart: c['Set apart'], by: c['Sets apart'], status: c.Status }; });
+  return { items: items };
+};
+
+/* ---------- LCR paste: members or callings ---------- */
+function parseTable_(text) {
+  var lines = String(text || '').replace(/\r/g, '').split('\n').map(function (l) { return l.replace(/ /g, ' '); }).filter(function (l) { return l.trim(); });
+  var split = function (l) { return l.indexOf('\t') >= 0 ? l.split('\t') : l.split(/\s{2,}/); };
+  var hi = -1, head = [];
+  for (var i = 0; i < Math.min(lines.length, 20); i++) { var c = split(lines[i]).map(function (x) { return x.trim().toLowerCase(); }); if (c.indexOf('name') >= 0 && c.length >= 3) { hi = i; head = c; break; } }
+  if (hi < 0) return { head: [], rows: [] };
+  var rows = [];
+  for (var j = hi + 1; j < lines.length; j++) {
+    var cells = split(lines[j]).map(function (x) { return x.trim(); });
+    if (cells.length < 2) continue;
+    if (cells[0] === '' && cells.length > head.length) cells.shift();
+    var o = {}; head.forEach(function (h, k) { o[h] = cells[k] || ''; });
+    if (o.name && o.name.indexOf(',') > 0) rows.push(o);
+  }
+  return { head: head, rows: rows };
+}
+function lcrDate_(s) { s = String(s || '').trim(); if (!s) return ''; if (/^\d{4}-\d\d-\d\d/.test(s)) return s.slice(0, 10); var us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (us) return us[3] + '-' + ('0' + us[1]).slice(-2) + '-' + ('0' + us[2]).slice(-2); var d = new Date(s); if (isNaN(d)) { var m = s.match(/(\d{1,2})\s+(\w{3})\w*\s+(\d{4})/); if (m) d = new Date(m[2] + ' ' + m[1] + ', ' + m[3]); } return isNaN(d) ? '' : ymd_(d); }
+function lcrPhone_(s) { var x = String(s || '').replace(/\D/g, ''); if (x.length === 11 && x[0] === '1') x = x.slice(1); return x.length === 10 ? x.slice(0, 3) + '-' + x.slice(3, 6) + '-' + x.slice(6) : String(s || '').trim(); }
+var LCR_ORG = { 'Bishopric': 'Bishopric', 'Elders Quorum': 'Elders Quorum', 'Relief Society': 'Relief Society', 'Young Women': 'Young Women', 'Aaronic Priesthood Quorums': 'Young Men', 'Primary': 'Primary', 'Sunday School': 'Sunday School', 'Temple and Family History': 'Temple & Family History', 'Ward Missionaries': 'Ward Mission', 'Other Callings': 'Ward' };
+function lcrDiff_(kind, text) {
+  var t = parseTable_(text);
+  if (!t.rows.length) throw new Error('Couldn\'t find the list in what was pasted. In LCR, select the whole table (including the heading row), copy, and paste here.');
+  var people = rows_('People'), bySort = {}; people.forEach(function (p) { bySort[nkey_(p['Sort name'])] = p; });
+  var out = { kind: kind, count: t.rows.length, add: [], change: [], gone: [], same: 0 };
+  if (kind === 'members') {
+    var seen = {};
+    t.rows.forEach(function (r) {
+      var k = nkey_(r.name), p = bySort[k]; seen[k] = 1;
+      var n = { sort: r.name, gender: (r.gender || '').charAt(0).toUpperCase(), birth: lcrDate_(r['birth date'] || r.birthdate), phone: r['phone number'] || r.phone ? lcrPhone_(r['phone number'] || r.phone) : '', email: r['e-mail'] || r.email || '' };
+      if (!p) { out.add.push(n); return; }
+      var ch = [];
+      if (n.phone && n.phone !== p.Phone) ch.push('phone');
+      if (n.email && n.email.toLowerCase() !== String(p.Email).toLowerCase()) ch.push('email');
+      if (n.birth && n.birth !== p['Birth date']) ch.push('birth date');
+      if (p.Source === 'Moved out') ch.push('back in the ward');
+      if (ch.length) out.change.push({ id: p.ID, name: p.Name, what: ch, n: n }); else out.same++;
+    });
+    people.forEach(function (p) { if (!seen[nkey_(p['Sort name'])] && p.Source !== 'Moved out' && p.Source !== 'Manual') out.gone.push({ id: p.ID, name: p.Name }); });
+  } else {
+    var cur = rows_('Callings').filter(function (c) { return c.Source === 'LCR' && c.Status !== 'Released'; }), key = function (person, calling) { return nkey_(person) + '|' + nkey_(calling); };
+    var have = {}; cur.forEach(function (c) { have[key(c.Person, c.Calling)] = c; });
+    var nameOf = function (sort) { var p = bySort[nkey_(sort)]; if (p) return p.Name; var a = String(sort).split(','); return (a.slice(1).join(',').trim() + ' ' + a[0].trim()).trim(); };
+    var seenC = {};
+    t.rows.forEach(function (r) {
+      var cal = r.calling || r.position || ''; if (!cal) return;
+      var person = nameOf(r.name), k = key(person, cal); seenC[k] = 1;
+      if (have[k]) { out.same++; return; }
+      var org = LCR_ORG[r.organizations || r.organization] || (/^Stake|High Council/.test(r.organizations || r.organization || '') ? 'Stake' : 'Ward');
+      out.add.push({ person: person, calling: cal, org: org, sustained: lcrDate_(r.sustained), setApart: lcrDate_(r['set apart']) });
+    });
+    cur.forEach(function (c) { if (!seenC[key(c.Person, c.Calling)]) out.gone.push({ id: c.ID, name: c.Person, calling: c.Calling }); });
+  }
+  return out;
+}
+ACTIONS.lcrPreview = function (req, me) {
+  if (!(me.roles.admin || me.roles.clerk)) throw new Error('Only the executive secretary and clerks paste from LCR.');
+  return { diff: lcrDiff_(req.kind === 'callings' ? 'callings' : 'members', req.text) };
+};
+ACTIONS.lcrApply = function (req, me) {
+  if (!(me.roles.admin || me.roles.clerk)) throw new Error('Only the executive secretary and clerks paste from LCR.');
+  var d = lcrDiff_(req.kind === 'callings' ? 'callings' : 'members', req.text), t = ymd_(today_()), n = 0;
+  if (d.kind === 'members') {
+    d.add.forEach(function (a) { var parts = a.sort.split(','); save_(me, 'People', { Name: (parts.slice(1).join(',').trim() + ' ' + parts[0].trim()).trim(), 'Sort name': a.sort, Gender: a.gender, 'Birth date': a.birth, Phone: a.phone, Email: a.email, Household: parts[0].trim(), Attends: 'Unknown', 'Moved in': t, Source: 'LCR', Updated: t }, { system: true, quiet: true }); n++; });
+    d.change.forEach(function (c) { var row = { ID: c.id, Updated: t, Source: 'LCR' }; if (c.n.phone) row.Phone = c.n.phone; if (c.n.email) row.Email = c.n.email; if (c.n.birth) row['Birth date'] = c.n.birth; save_(me, 'People', row, { system: true, quiet: true }); n++; });
+    if (req.markGone !== false) d.gone.forEach(function (g) { save_(me, 'People', { ID: g.id, Source: 'Moved out', Updated: t }, { system: true, quiet: true }); n++; });
+  } else {
+    d.add.forEach(function (a) {
+      var hub = rows_('Callings').filter(function (c) { return c.Source === 'Hub' && nkey_(c.Person) === nkey_(a.person) && nkey_(c.Calling) === nkey_(a.calling) && !c['Recorded in LCR']; })[0];
+      if (hub) save_(me, 'Callings', { ID: hub.ID, 'Recorded in LCR': t, Status: 'Serving', Sustained: a.sustained || hub.Sustained }, { system: true, quiet: true });
+      save_(me, 'Callings', { Organization: a.org, Calling: a.calling, Person: a.person, Status: 'Serving', Sustained: a.sustained, 'Set apart': a.setApart, 'Recorded in LCR': a.sustained || t, Source: 'LCR' }, { system: true, quiet: true }); n++;
+    });
+    d.gone.forEach(function (g) { save_(me, 'Callings', { ID: g.id, Status: 'Released' }, { system: true, quiet: true }); n++; });
+  }
+  log_(me.name, 'LCR paste', d.kind, '', d.add.length + ' new, ' + d.change.length + ' changed, ' + d.gone.length + ' gone');
+  return { diff: d, applied: n };
 };
 
 
