@@ -80,7 +80,7 @@ var SCHEMA = {"tabs":[
   ["api_url", "Engine", "Engine address (Deploy \u203a Web app URL)", "", "Filled in after the first deployment"],
   ["public_calendar", "Engine", "Show the public calendar", "Yes", ""]
 ]};
-var VERSION = '2.9.1';
+var VERSION = '2.9.2';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -1391,7 +1391,7 @@ ACTIONS.inboxDecide = function (req, me) {
   if (req.approve) {
     var data = {}; try { data = typeof it.Data === 'string' ? JSON.parse(it.Data || '{}') : it.Data || {}; } catch (e) {}
     if (req.edited) data = req.edited;
-    (data.events || []).forEach(function (e) { save_(me, 'Events', { Date: e.date, 'End date': e.end || '', Start: e.start || '', End: e.endTime || '', Title: e.title, Organization: e.org || data.org || 'Ward', Place: e.place || '', Status: 'Approved', Source: it.From || 'Inbox' }, { system: true, quiet: true }); });
+    applyIn_(me, data, it.From || 'Inbox');
   }
   save_(me, 'Inbox', { ID: it.ID, Status: req.approve ? (req.edited ? 'Edited' : 'Approved') : 'Skipped', 'Decided by': me.name, 'Decided on': Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm") }, { system: true });
   return {};
@@ -1468,26 +1468,40 @@ function nightly() {
   jobRecord_('backup', function () { return backup_(false); });
   jobRecord_('tidy', tidy_);
 }
-/* Linked Google Calendars and iCal links → Events (auto-approved, or held in the inbox). */
+/* Every linked source, every night: calendars and iCal links → Events; Google Sheets and Docs → see 85_sources. Weekly ones run on Mondays. */
 function readSources_() {
-  var from = today_(), to = addDays_(today_(), 120), done = 0;
-  rows_('Sources').filter(function (s) { return s.Link && /Calendar|iCal/.test(s.Kind) && s.Schedule !== 'Manual'; }).forEach(function (s) {
-    var got = [], result = '';
-    try {
-      if (/^https?:|^webcal:/i.test(s.Link)) got = parseIcs_(UrlFetchApp.fetch(String(s.Link).replace(/^webcal:/i, 'https:'), { muteHttpExceptions: true }).getContentText(), from, to);
-      else { var cal = CalendarApp.getCalendarById(s.Link); if (!cal) throw new Error('Calendar not found or not shared with the ward account'); got = cal.getEvents(from, to).map(function (e) { return { uid: e.getId() + '|' + ymd_(e.getStartTime()), date: ymd_(e.getStartTime()), start: e.isAllDayEvent() ? '' : Utilities.formatDate(e.getStartTime(), tz_(), 'h:mm a'), end: e.isAllDayEvent() ? '' : Utilities.formatDate(e.getEndTime(), tz_(), 'h:mm a'), title: e.getTitle(), place: e.getLocation() }; }); }
-      var have = {}; rows_('Events').forEach(function (e) { if (e['Source ID']) have[e['Source ID']] = e; });
-      var added = 0, changed = 0;
-      got.forEach(function (g) {
-        var cur = have[g.uid], row = { Date: g.date, Start: g.start, End: g.end, Title: g.title, Organization: s.Organization || 'Ward', Place: g.place || '', Source: s.Kind + ': ' + s.Organization, 'Source ID': g.uid };
-        if (!cur) { row.Status = s['Auto-approve'] === true ? 'Approved' : 'Inbox'; save_(null, 'Events', row, { system: true, quiet: true }); added++; }
-        else if (cur.Date !== g.date || cur.Title !== g.title || cur.Start !== g.start) { row.ID = cur.ID; save_(null, 'Events', row, { system: true, quiet: true }); changed++; }
-      });
-      result = got.length + ' read · ' + added + ' new · ' + changed + ' changed'; done++;
-    } catch (e) { result = 'Problem: ' + String(e.message || e).slice(0, 120); }
-    save_(null, 'Sources', { ID: s.ID, 'Last read': Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), Result: result }, { system: true, quiet: true });
-  });
+  var done = 0, monday = today_().getDay() === 1;
+  rows_('Sources').filter(function (s) { return s.Link && s.Schedule !== 'Manual' && (s.Schedule !== 'Weekly' || monday); }).forEach(function (s) { readSource_(s); done++; });
   return done + ' sources';
+}
+function readSource_(s) {
+  var result = '';
+  try {
+    if (/Sheet/.test(s.Kind)) result = sheetSource_(s);
+    else if (/Doc/.test(s.Kind)) result = docSource_(s);
+    else result = calSource_(s);
+  } catch (e) { result = 'Problem: ' + String(e.message || e).slice(0, 160); }
+  save_(null, 'Sources', { ID: s.ID, 'Last read': Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), Result: result }, { system: true, quiet: true });
+  return result;
+}
+/* Linked Google Calendars and iCal links → Events (auto-approved, or held in the inbox). */
+function calSource_(s) {
+  var from = today_(), to = addDays_(today_(), 120), got = [];
+  if (/^https?:|^webcal:/i.test(s.Link)) got = parseIcs_(UrlFetchApp.fetch(String(s.Link).replace(/^webcal:/i, 'https:'), { muteHttpExceptions: true }).getContentText(), from, to);
+  else { var cal = CalendarApp.getCalendarById(s.Link); if (!cal) throw new Error('Calendar not found. Share it with ' + wardAccount_() + ', or paste its iCal address instead.'); got = cal.getEvents(from, to).map(function (e) { return { uid: e.getId() + '|' + ymd_(e.getStartTime()), date: ymd_(e.getStartTime()), start: e.isAllDayEvent() ? '' : Utilities.formatDate(e.getStartTime(), tz_(), 'h:mm a'), end: e.isAllDayEvent() ? '' : Utilities.formatDate(e.getEndTime(), tz_(), 'h:mm a'), title: e.getTitle(), place: e.getLocation() }; }); }
+  var r = upsertEvents_(s, got);
+  return got.length + ' read · ' + r.added + ' new · ' + r.changed + ' changed' + (r.held ? ' · waiting for approval' : '');
+}
+function wardAccount_() { try { return Session.getEffectiveUser().getEmail(); } catch (e) { return 'the ward account'; } }
+function upsertEvents_(s, got) {
+  var have = {}; rows_('Events').forEach(function (e) { if (e['Source ID']) have[e['Source ID']] = e; });
+  var added = 0, changed = 0, held = s['Auto-approve'] !== true;
+  got.forEach(function (g) {
+    var cur = have[g.uid], row = { Date: g.date, 'End date': g.endDate || '', Start: g.start || '', End: g.end || '', Title: g.title, Organization: s.Organization || 'Ward', Place: g.place || '', Source: s.Kind + ': ' + s.Organization, 'Source ID': g.uid };
+    if (!cur) { row.Status = held ? 'Inbox' : 'Approved'; save_(null, 'Events', row, { system: true, quiet: true }); added++; }
+    else if (cur.Date !== g.date || cur.Title !== g.title || cur.Start !== (g.start || '') || cur.Place !== (g.place || '')) { row.ID = cur.ID; save_(null, 'Events', row, { system: true, quiet: true }); changed++; }
+  });
+  return { added: added, changed: changed, held: held && added > 0 };
 }
 function parseIcs_(text, from, to) {
   var out = [], blocks = String(text || '').replace(/\r\n[ \t]/g, '').split('BEGIN:VEVENT').slice(1);
@@ -2078,6 +2092,235 @@ ACTIONS.ask = function (req, me) {
   var body = JSON.parse(res.getContentText()), text = (((body.candidates || [])[0] || {}).content || { parts: [{}] }).parts.map(function (p) { return p.text || ''; }).join('').trim();
   log_(me.name, 'ask', '', '', '');
   return { answer: text || 'I don\'t see that in the Hub.' };
+};
+
+
+/* ================= Bringing things in: linked Google Sheets and Docs, pasted tables and text, photos and PDFs read by Gemini ================= */
+/* Leaders connect their own organization's calendar, sheet or doc, or paste or scan. What runs unattended waits in Kevin's inbox unless he turns on Auto-approve. */
+
+/* ---------- Gemini (free tier). Only calendar dates and lesson schedules are ever sent: never phone lists. ---------- */
+function gemini_(parts) {
+  var key = setting_('gemini_key'); if (!key) throw new Error('Reading photos, PDFs and Docs needs the free Gemini key (Settings › Engine › Gemini key). Kevin can add it.');
+  var model = setting_('gemini_model') || 'gemini-2.5-flash';
+  var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } })
+  });
+  var code = res.getResponseCode();
+  if (code !== 200) throw new Error(code === 429 ? 'Gemini\'s free allowance is used up for the moment. Try again in a few minutes.' : 'Gemini couldn\'t read it (' + code + '). Try a clearer photo or a smaller file.');
+  var body = JSON.parse(res.getContentText()), text = (((body.candidates || [])[0] || {}).content || { parts: [{}] }).parts.map(function (p) { return p.text || ''; }).join('');
+  try { return JSON.parse(text.replace(/^```(json)?|```$/g, '')); } catch (e) { throw new Error('Gemini\'s answer couldn\'t be read. Try again.'); }
+}
+function geminiRead_(goesTo, org, parts) {
+  var ask = 'Today is ' + ymd_(today_()) + '. This comes from the "' + org + '" organization of a congregation of The Church of Jesus Christ of Latter-day Saints. ' +
+    (goesTo === 'Teaching'
+      ? 'It is a teaching schedule. List every lesson you can read. Answer only with JSON: {"summary":"one short sentence","lessons":[{"date":"YYYY-MM-DD","class":"","teacher":"","lesson":"","link":""}]}. '
+      : 'List every dated event you can read. Answer only with JSON: {"summary":"one short sentence","events":[{"date":"YYYY-MM-DD","end":"YYYY-MM-DD or empty","start":"7:00 PM or empty","endTime":"","title":"","place":""}]}. ') +
+    'Use the most likely year for each date (dates usually fall within the next 12 months). Leave out phone numbers, email addresses and the names of children.';
+  return cleanRead_(goesTo, gemini_([{ text: ask }].concat(parts)));
+}
+function cleanRead_(goesTo, out) {
+  var ok = function (d) { return /^\d{4}-\d\d-\d\d$/.test(d || ''); }, t = function (s, n) { return String(s || '').trim().slice(0, n || 120); };
+  if (goesTo === 'Teaching') return { summary: t(out.summary, 200), lessons: (out.lessons || []).filter(function (l) { return ok(l.date) && (l.lesson || l.teacher); }).slice(0, 120).map(function (l) { return { date: l.date, cls: t(l['class'] || l.cls, 60), teacher: t(l.teacher, 80), lesson: t(l.lesson, 200), link: /^https?:\/\//.test(l.link || '') ? t(l.link, 400) : '' }; }) };
+  return { summary: t(out.summary, 200), events: (out.events || []).filter(function (e) { return ok(e.date) && e.title; }).slice(0, 120).map(function (e) { return { date: e.date, end: ok(e.end) ? e.end : '', start: t(e.start, 12), endTime: t(e.endTime, 12), title: t(e.title), place: t(e.place) }; }) };
+}
+
+/* ---------- tables: a Google Sheet, or rows copied from Sheets, Excel, Word or an email ---------- */
+var HEADS = {
+  date: /^(date|day|when|sunday|week of|dates?)\b/, title: /^(event|activity|title|what|description|event name)\b/, start: /^(time|start|starts|start time|begins)\b/,
+  end: /^(end|ends|end time)\b/, place: /^(place|location|where|room)\b/, cls: /^(class|group|quorum|course)\b/, teacher: /^(teacher|teachers|taught by|instructor|presenter)\b/,
+  lesson: /^(lesson|topic|talk|chapter|reading|title|subject)\b/, link: /^(link|url|website)\b/, name: /^(name|member|person|full name|youth|sister|brother)\b/,
+  phone: /^(phone|cell|mobile|phone number|cell phone)\b/, email: /^(email|e-mail|email address)\b/, parent: /^(parent|parents|parent phone|parent's phone)\b/
+};
+var NEED = { Events: ['date', 'title'], Teaching: ['date', 'lesson'], People: ['name'] };
+function cellDate_(v) {
+  if (v instanceof Date) return isNaN(v) ? '' : ymd_(v);
+  var s = String(v || '').trim().replace(/^(sun|mon|tue|wed|thu|fri|sat)[a-z]*,?\s+/i, ''); if (!s) return '';
+  if (/\d{4}/.test(s)) { var d = lcrDate_(s); if (d) return d; }
+  var m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?$/) || s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return '';
+  var t = today_(), x = /^\d/.test(m[1]) ? new Date(t.getFullYear(), +m[1] - 1, +m[2]) : new Date(m[1] + ' ' + m[2] + ', ' + t.getFullYear());
+  if (isNaN(x)) return ''; if (x < addDays_(t, -60)) x.setFullYear(x.getFullYear() + 1);
+  return ymd_(x);
+}
+function cellTime_(v) {
+  if (v instanceof Date) return isNaN(v) ? '' : Utilities.formatDate(v, tz_(), 'h:mm a');
+  var s = String(v || '').trim(), m = s.match(/(\d{1,2})(?::(\d\d))?\s*([ap]\.?m?\.?)?/i); if (!m) return '';
+  var h = +m[1], ap = m[3] ? (/p/i.test(m[3]) ? 'PM' : 'AM') : (h >= 7 && h <= 11 ? 'AM' : 'PM');
+  if (!m[3] && /p/i.test(s.slice(m.index + m[0].length))) ap = 'PM';
+  return (h % 12 || 12) + ':' + (m[2] || '00') + ' ' + ap;
+}
+function tableRows_(vals, goesTo) {
+  var need = NEED[goesTo] || NEED.Events;
+  for (var i = 0; i < Math.min(vals.length, 10); i++) {
+    var col = {}; vals[i].forEach(function (h, j) { var k = String(h || '').trim().toLowerCase(); if (!k) return; for (var f in HEADS) if (col[f] == null && HEADS[f].test(k) && !(goesTo === 'Teaching' && f === 'title')) { col[f] = j; break; } });
+    if (goesTo === 'Teaching' && col.lesson == null && col.title != null) col.lesson = col.title;
+    if (!need.every(function (f) { return col[f] != null; }) || (goesTo === 'People' && col.phone == null && col.email == null && col.parent == null)) continue;
+    var out = [], get = function (r, f) { return col[f] == null ? '' : r[col[f]]; };
+    for (var j = i + 1; j < vals.length; j++) {
+      var r = vals[j]; if (!r.some(function (c) { return String(c).trim(); })) continue;
+      if (goesTo === 'People') { var n = String(get(r, 'name')).trim(); if (n) out.push({ name: n, phone: lcrPhone_(get(r, 'phone')), email: String(get(r, 'email')).trim(), parent: lcrPhone_(get(r, 'parent')) }); continue; }
+      var d = cellDate_(get(r, 'date')); if (!d) continue;
+      var tm = String(get(r, 'start') instanceof Date ? '' : get(r, 'start')).split(/\s*[-–]\s*/);
+      if (goesTo === 'Teaching') out.push({ date: d, cls: String(get(r, 'cls')).trim().slice(0, 60), teacher: String(get(r, 'teacher')).trim().slice(0, 80), lesson: String(get(r, 'lesson')).trim().slice(0, 200), link: /^https?:\/\//.test(String(get(r, 'link'))) ? String(get(r, 'link')).trim() : '' });
+      else out.push({ date: d, start: cellTime_(get(r, 'start') instanceof Date ? get(r, 'start') : tm[0]), endTime: get(r, 'end') !== '' ? cellTime_(get(r, 'end')) : (tm[1] ? cellTime_(tm[1]) : ''), title: String(get(r, 'title')).trim().slice(0, 120), place: String(get(r, 'place')).trim().slice(0, 120), end: '' });
+    }
+    return out.filter(function (x) { return goesTo === 'People' || goesTo === 'Teaching' ? (x.lesson || x.teacher || x.name || x.phone) : x.title; });
+  }
+  return null;
+}
+function pastedTable_(text) {
+  var lines = String(text || '').replace(/\r/g, '').split('\n').filter(function (l) { return l.trim(); });
+  if (lines.length < 2 || !lines.some(function (l) { return l.indexOf('\t') >= 0; })) return null;
+  return lines.map(function (l) { return l.split('\t'); });
+}
+
+/* ---------- linked Google Sheets: every tab, columns found by their headings ---------- */
+function sheetSource_(s) {
+  var ss;
+  try { ss = /^https?:/.test(s.Link) ? SpreadsheetApp.openByUrl(s.Link) : SpreadsheetApp.openById(s.Link); }
+  catch (e) { throw new Error('Can\'t open the sheet. In Google Sheets, tap Share and add ' + wardAccount_() + ' as a viewer.'); }
+  var goes = s['Goes to'] || 'Events', rows = [], found = false;
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getLastRow() < 2) return;
+    var t = tableRows_(sh.getRange(1, 1, Math.min(sh.getLastRow(), 800), Math.min(sh.getLastColumn(), 26)).getValues(), goes);
+    if (t) { found = true; rows = rows.concat(t); }
+  });
+  if (!found) throw new Error('No tab has the headings the Hub looks for (' + (goes === 'Teaching' ? 'Date and Lesson' : goes === 'People' ? 'Name and Phone' : 'Date and Event') + ').');
+  if (goes === 'Events') { var r = upsertEvents_(s, rows.map(function (e) { return Object.assign(e, { uid: 'sheet:' + ss.getId() + '|' + e.date + '|' + nkey_(e.title), end: e.endTime, endDate: '' }); })); return rows.length + ' read · ' + r.added + ' new · ' + r.changed + ' changed' + (r.held ? ' · waiting for approval' : ''); }
+  if (goes === 'Teaching') return holdOrApply_(s, { org: s.Organization, lessons: lessonChanges_(s.Organization, rows) }, rows.length);
+  if (goes === 'People') return holdOrApply_(s, { org: s.Organization, people: peopleFills_(rows) }, rows.length, true);
+  return 'Nothing to do';
+}
+/* ---------- linked Google Docs: Gemini reads the text when it changes ---------- */
+function docSource_(s) {
+  var goes = s['Goes to'] === 'Teaching' ? 'Teaching' : 'Events', text;
+  if (s['Goes to'] === 'People') throw new Error('Phone lists need a Google Sheet, so they never go to Gemini.');
+  try { text = (/^https?:/.test(s.Link) ? DocumentApp.openByUrl(s.Link) : DocumentApp.openById(s.Link)).getBody().getText(); }
+  catch (e) { throw new Error('Can\'t open the Doc. In Google Docs, tap Share and add ' + wardAccount_() + ' as a viewer.'); }
+  var p = PropertiesService.getScriptProperties(), hk = 'srcText:' + s.ID, h = hash_(text);
+  if (p.getProperty(hk) === h) return 'No change since last time';
+  var out = geminiRead_(goes, s.Organization, [{ text: 'DOCUMENT:\n' + text.slice(0, 40000) }]);
+  p.setProperty(hk, h);
+  if (goes === 'Teaching') return holdOrApply_(s, { org: s.Organization, lessons: lessonChanges_(s.Organization, out.lessons) }, out.lessons.length);
+  var r = upsertEvents_(s, out.events.map(function (e) { return { uid: 'doc:' + s.ID + '|' + e.date + '|' + nkey_(e.title), date: e.date, endDate: e.end, start: e.start, end: e.endTime, title: e.title, place: e.place }; }));
+  return out.events.length + ' read · ' + r.added + ' new · ' + r.changed + ' changed' + (r.held ? ' · waiting for approval' : '');
+}
+function hash_(s) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s))).slice(0, 22); }
+/* Lessons that are new or different from the teaching schedule. */
+function lessonChanges_(org, lessons) {
+  var have = {}; rows_('Teaching').forEach(function (r) { if (r.Organization === org) have[nkey_(r.Class) + '|' + r.Date] = r; });
+  return (lessons || []).filter(function (l) { var c = have[nkey_(l.cls) + '|' + l.date]; return !c || (l.lesson && c.Lesson !== l.lesson) || (l.teacher && c.Teacher !== l.teacher) || (l.link && c.Link !== l.link); });
+}
+/* Phones and emails for people the ward list has without one. Never overwrites what LCR gave. */
+function peopleFills_(rows) {
+  var by = {}; rows_('People').forEach(function (p) { by[nkey_(p.Name)] = p; if (p['Sort name']) by[nkey_(p['Sort name'])] = p; });
+  var out = [];
+  rows.forEach(function (r) {
+    var nm = String(r.name).replace(/^([^,]+),\s*(.+)$/, '$2 $1'), p = by[nkey_(nm)] || by[nkey_(r.name)]; if (!p) return;
+    var set = {}, adult = (age_(p['Birth date']) || 99) >= 18;
+    if (r.phone && !p.Phone) set.Phone = r.phone;
+    if (r.email && !p.Email && /.+@.+\..+/.test(r.email)) set.Email = r.email;
+    if (r.parent && !adult && !p['Parent phone']) set['Parent phone'] = r.parent;
+    if (Object.keys(set).length) out.push({ name: p.Name, set: set });
+  });
+  return out;
+}
+/* Auto-approve applies it; otherwise one inbox item for Kevin (not repeated night after night). Phone lists always wait for Kevin. */
+function holdOrApply_(s, data, read, always) {
+  var n = (data.lessons || data.people || []).length; if (!n) return read + ' read · up to date';
+  if (s['Auto-approve'] === true && !always) { var a = applyIn_(null, data, s.Kind + ': ' + s.Organization); return read + ' read · ' + a + ' updated'; }
+  var p = PropertiesService.getScriptProperties(), hk = 'srcHold:' + s.ID, h = hash_(JSON.stringify(data));
+  if (p.getProperty(hk) !== h) {
+    save_(null, 'Inbox', { Received: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), From: s.Kind + ' · ' + s.Organization, Kind: data.people ? 'Phone list' : 'Lessons', Summary: n + (data.people ? ' phone numbers or emails to fill in' : ' lessons new or changed'), Data: JSON.stringify(data), Status: 'New' }, { system: true, quiet: true });
+    p.setProperty(hk, h);
+  }
+  return read + ' read · ' + n + ' waiting for approval';
+}
+function applyIn_(me, data, source) {
+  var n = 0, org = data.org || 'Ward';
+  (data.events || []).forEach(function (e) { save_(me, 'Events', { Date: e.date, 'End date': e.end || '', Start: e.start || '', End: e.endTime || '', Title: e.title, Organization: org, Place: e.place || '', Status: 'Approved', Source: source }, { system: true, quiet: true }); n++; });
+  if (data.lessons) {
+    var have = {}; rows_('Teaching').forEach(function (r) { if (r.Organization === org) have[nkey_(r.Class) + '|' + r.Date] = r; });
+    data.lessons.forEach(function (l) {
+      var c = have[nkey_(l.cls) + '|' + l.date], row = { Organization: org, Class: l.cls || (c && c.Class) || '', Date: l.date };
+      if (l.lesson) row.Lesson = l.lesson; if (l.teacher) row.Teacher = l.teacher; if (l.link) row.Link = l.link;
+      if (c) row.ID = c.ID; save_(me, 'Teaching', row, { system: true, quiet: true }); n++;
+    });
+  }
+  if (data.people) {
+    var P = {}; rows_('People').forEach(function (p) { P[p.Name] = p; });
+    data.people.forEach(function (x) { var p = P[x.name]; if (!p) return; var row = { ID: p.ID }, any = false; for (var k in x.set) if (!p[k] && /^(Phone|Email|Parent phone)$/.test(k)) { row[k] = x.set[k]; any = true; } if (any) { save_(me, 'People', row, { system: true, quiet: true }); n++; } });
+  }
+  if (me) log_(me.name, 'brought in', '', '', n + ' from ' + source);
+  return n;
+}
+
+/* ---------- what each leader sees: their connections, paste, scan ---------- */
+function canOrg_(me, org) { return isBishopric_(me) || me.orgs.indexOf(org) >= 0 || (org === 'Youth' && me.orgs.some(function (o) { return /Young (Wo)?men/.test(o); })); }
+function needLeader_(me) { if (!(isBishopric_(me) || me.roles.leader)) throw new Error('This is for organization leaders.'); }
+ACTIONS.mySources = function (req, me) {
+  needLeader_(me);
+  var orgs = isBishopric_(me) ? ORG_LIST_.filter(function (o) { return o !== 'Bishopric'; }) : me.orgs.concat(me.orgs.some(function (o) { return /Young (Wo)?men/.test(o); }) ? ['Youth'] : []);
+  return { orgs: orgs, account: wardAccount_(), gemini: !!setting_('gemini_key'), admin: !!me.roles.admin,
+    sources: rows_('Sources').filter(function (s) { return s.Link && canOrg_(me, s.Organization); }).map(function (s) { return { id: s.ID, org: s.Organization, kind: s.Kind, goesTo: s['Goes to'] || 'Events', link: s.Link, auto: s['Auto-approve'] === true, schedule: s.Schedule, lastRead: s['Last read'], result: s.Result }; }) };
+};
+function kindOf_(link) {
+  var l = String(link || '').trim();
+  if (/docs\.google\.com\/spreadsheets\//.test(l)) return 'Google Sheet';
+  if (/docs\.google\.com\/document\//.test(l)) return 'Google Doc';
+  if (/^(https|webcal):\/\/\S+/i.test(l) && /ical|\.ics|calendar|outlook|webcal/i.test(l)) return 'iCal';
+  if (/^[\w.+-]+@([\w-]+\.)*(google\.com|gmail\.com)$/i.test(l)) return 'Google Calendar';
+  return '';
+}
+ACTIONS.sourceAdd = function (req, me) {
+  needLeader_(me);
+  var org = String(req.org || ''), link = String(req.link || '').trim(), goes = /^(Events|Teaching|People)$/.test(req.goesTo) ? req.goesTo : 'Events';
+  if (!canOrg_(me, org)) throw new Error('Pick your organization.');
+  var kind = kindOf_(link); if (!kind) throw new Error('That doesn\'t look like a Google Calendar, Google Sheet, Google Doc or calendar (iCal) link.');
+  if (goes === 'People' && kind !== 'Google Sheet') throw new Error('Phone lists need a Google Sheet.');
+  if (goes === 'Teaching' && /Calendar|iCal/.test(kind)) throw new Error('A teaching schedule needs a Google Sheet or Doc.');
+  if (rows_('Sources').filter(function (s) { return s.Organization === org; }).length >= 8) throw new Error('That\'s plenty for one organization. Remove one first.');
+  if (rows_('Sources').some(function (s) { return s.Link === link && s.Organization === org; })) throw new Error('That one is already connected.');
+  var id = save_(me, 'Sources', { Organization: org, Kind: kind, Link: link, 'Goes to': goes, 'Auto-approve': false, Schedule: kind === 'Google Doc' ? 'Weekly' : 'Nightly' }, { system: true });
+  var s = rows_('Sources').filter(function (x) { return x.ID === id; })[0];
+  return { id: id, kind: kind, result: readSource_(s) };
+};
+function mySource_(me, id) { var s = rows_('Sources').filter(function (x) { return x.ID === id; })[0]; if (!s || !canOrg_(me, s.Organization)) throw new Error('Not found'); return s; }
+ACTIONS.sourceReadNow = function (req, me) { needLeader_(me); return { result: readSource_(mySource_(me, req.id)) }; };
+ACTIONS.sourceRemove = function (req, me) { needLeader_(me); var s = mySource_(me, req.id); sheet_('Sources').deleteRow(s._r); bump_('Sources'); log_(me.name, 'remove', 'Sources', s.ID, s.Kind + ' · ' + s.Organization); return { removed: true }; };
+ACTIONS.sourceAuto = function (req, me) { if (!me.roles.admin) throw new Error('Only the executive secretary turns on Auto-approve.'); mySource_(me, req.id); save_(me, 'Sources', { ID: req.id, 'Auto-approve': req.on === true }, { system: true }); return {}; };
+/* Read what a leader pasted or photographed. Nothing is saved until they tap Add. */
+ACTIONS.readIn = function (req, me) {
+  needLeader_(me);
+  var org = String(req.org || ''), goes = /^(Events|Teaching|People)$/.test(req.goesTo) ? req.goesTo : 'Events';
+  if (!canOrg_(me, org)) throw new Error('Pick your organization.');
+  if (req.data) {
+    if (goes === 'People') throw new Error('Phone lists can\'t be scanned. Paste them from a spreadsheet instead.');
+    if (String(req.data).length > 14e6) throw new Error('That file is too large. Try a smaller photo.');
+    return Object.assign({ how: 'gemini' }, geminiRead_(goes, org, [{ inline_data: { mime_type: String(req.mime || 'image/jpeg'), data: String(req.data) } }]));
+  }
+  var text = String(req.text || '').slice(0, 60000); if (!text.trim()) throw new Error('Paste something first.');
+  var t = pastedTable_(text), rows = t ? tableRows_(t, goes) : null;
+  if (rows && rows.length) {
+    if (goes === 'People') { var f = peopleFills_(rows); return { how: 'table', summary: rows.length + ' names · ' + f.length + ' to fill in', people: f }; }
+    return goes === 'Teaching' ? { how: 'table', summary: rows.length + ' lessons', lessons: rows } : { how: 'table', summary: rows.length + ' dates', events: rows };
+  }
+  if (goes === 'People') throw new Error('Copy the list from a spreadsheet with Name and Phone headings, then paste it here.');
+  return Object.assign({ how: 'gemini' }, geminiRead_(goes, org, [{ text: 'PASTED TEXT:\n' + text }]));
+};
+ACTIONS.readInSave = function (req, me) {
+  needLeader_(me);
+  var org = String(req.org || ''); if (!canOrg_(me, org)) throw new Error('Pick your organization.');
+  if (req.people) {
+    var f = peopleFills_((req.people || []).map(function (x) { return { name: x.name, phone: (x.set || {}).Phone, email: (x.set || {}).Email, parent: (x.set || {})['Parent phone'] }; }));
+    if (!f.length) return { added: 0, held: 0 };
+    save_(null, 'Inbox', { Received: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), From: me.name + ' · ' + org, Kind: 'Phone list', Summary: f.length + ' phone numbers or emails to fill in', Data: JSON.stringify({ org: org, people: f }), Status: 'New' }, { system: true });
+    return { added: 0, held: f.length };
+  }
+  var data = cleanRead_(req.lessons ? 'Teaching' : 'Events', { events: req.events, lessons: req.lessons });
+  data.org = org;
+  return { added: applyIn_(me, data, 'Added by ' + me.name), held: 0 };
 };
 
 
