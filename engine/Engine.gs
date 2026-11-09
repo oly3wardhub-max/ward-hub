@@ -87,7 +87,7 @@ function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).se
 
 var PUBLIC_ACTIONS = { hello: 1, link: 1 };
 function handle_(req) {
-  var t0 = Date.now();
+  var t0 = Date.now(); MEMO_ = {};
   try {
     var a = String(req.action || '');
     if (!ACTIONS[a]) return { ok: false, error: 'Unknown action' };
@@ -135,28 +135,40 @@ function toIn_(v, type) {
   return String(v).slice(0, 5000);
 }
 
-/* Read a whole tab as objects (cached until the next write to that tab). */
+/* Read a whole tab as objects. Kept in memory for this request, and in the script cache (in pieces) until the next write to that tab. */
+var MEMO_ = {};
 function rows_(name) {
   var cache = CacheService.getScriptCache(), ver = PropertiesService.getScriptProperties().getProperty('v:' + name) || '0';
   var ck = 'tab:' + name + ':' + ver;
-  var hit = cache.get(ck);
-  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
-  var d = tabDef_(name), sh = sheet_(name), last = sh.getLastRow(), n = d.cols.length;
+  if (MEMO_[ck]) return MEMO_[ck];
+  try {
+    var n = +cache.get(ck + ':n');
+    if (n > 0) {
+      var keys = []; for (var i = 0; i < n; i++) keys.push(ck + ':' + i);
+      var got = cache.getAll(keys), parts = [];
+      for (var j = 0; j < n; j++) { if (got[keys[j]] == null) { parts = null; break; } parts.push(got[keys[j]]); }
+      if (parts) return (MEMO_[ck] = JSON.parse(parts.join('')));
+    }
+  } catch (e) {}
+  var d = tabDef_(name), sh = sheet_(name), last = sh.getLastRow(), cn = d.cols.length;
   var out = [];
   if (last >= 2) {
-    var head = sh.getRange(1, 1, 1, Math.max(n, sh.getLastColumn())).getValues()[0].map(String);
+    var head = sh.getRange(1, 1, 1, Math.max(cn, sh.getLastColumn())).getValues()[0].map(String);
     var vals = sh.getRange(2, 1, last - 1, head.length).getValues();
     var idx = d.cols.map(function (c) { return head.indexOf(c[0]); });
     for (var r = 0; r < vals.length; r++) {
       var row = vals[r]; if (!row.some(function (x) { return x !== '' && x !== null; })) continue;
       var o = { _r: r + 2 };
-      for (var c = 0; c < n; c++) o[d.cols[c][0]] = idx[c] < 0 ? '' : toOut_(row[idx[c]], d.cols[c][1]);
+      for (var c = 0; c < cn; c++) o[d.cols[c][0]] = idx[c] < 0 ? '' : toOut_(row[idx[c]], d.cols[c][1]);
       out.push(o);
     }
   }
-  var s = JSON.stringify(out);
-  if (s.length < 95000) cache.put(ck, s, 21600);
-  return out;
+  try {
+    var s = JSON.stringify(out), size = 90000, put = {}, k = 0;
+    for (var p = 0; p < s.length; p += size) put[ck + ':' + (k++)] = s.slice(p, p + size);
+    if (k <= 30) { put[ck + ':n'] = String(k); cache.putAll(put, 21600); }
+  } catch (e) {}
+  return (MEMO_[ck] = out);
 }
 function bump_(name) { var p = PropertiesService.getScriptProperties(); p.setProperty('v:' + name, Date.now().toString(36) + Math.random().toString(36).slice(2, 6)); if (name === 'Settings') SET_CACHE_ = null; }
 
@@ -997,7 +1009,7 @@ ACTIONS.buildingRequest = function (req, me) {
 ACTIONS.building = function (req, me) {
   if (!(isBishopric_(me) || me.roles.building)) throw new Error('Only the building scheduler and bishopric see requests.');
   var from = ymd_(addDays_(today_(), -1));
-  return { rules: bldRules_(), list: rows_('Building').filter(function (b) { return b.Date >= from && b.Status !== 'Cancelled'; }).map(function (b) { delete b._r; return b; }).sort(function (a, b) { return (a.Date + timeKey_(a.Start)).localeCompare(b.Date + timeKey_(b.Start)); }) };
+  return { rules: bldRules_(), list: rows_('Building').filter(function (b) { return b.Date >= from && b.Status !== 'Cancelled'; }).map(strip_).sort(function (a, b) { return (a.Date + timeKey_(a.Start)).localeCompare(b.Date + timeKey_(b.Start)); }) };
 };
 ACTIONS.buildingDecide = function (req, me) {
   if (!(isBishopric_(me) || me.roles.building)) throw new Error('Only the building scheduler and bishopric approve requests.');
