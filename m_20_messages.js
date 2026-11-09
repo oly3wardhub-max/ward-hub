@@ -20,7 +20,7 @@
   WH.smsHref = smsHref;
 
   /* ---------- state ---------- */
-  const M = { aud: null, org: '', gid: '', who: 'youth', msg: null, mode: 'group', named: true, sent: {}, lessons: null };
+  const M = { aud: null, org: '', gid: '', who: 'both', msg: null, mode: 'group', named: true, sent: {}, lessons: null };
   const groupsOf = org => (M.aud.groups || []).filter(g => g.org === org);
   const cur = () => (M.aud.groups || []).find(g => g.org === M.org && g.id === M.gid) || null;
   function recipients(g) {
@@ -59,7 +59,7 @@
     let h = orgs.length > 1 ? `<div class="dates" style="margin-bottom:4px">${orgs.map(o => `<button class="date ${o === M.org ? 'on' : ''}" style="min-width:auto" data-act="msgOrg" data-org="${esc(o)}"><div class="d" style="font-size:15px;padding:4px 2px;white-space:nowrap">${esc(o)}</div></button>`).join('')}</div>` : '';
     h += `<div class="section-h"><span>Who</span></div><div class="list">${groupsOf(M.org).map(x => `<button class="row" data-act="msgGroup" data-id="${esc(x.id)}"><span class="check ${x.id === M.gid ? 'on' : ''}" style="width:22px;height:22px"></span><div class="main"><div class="t">${esc(x.label)}</div>${x.leader ? `<div class="s">Leader: ${esc(x.leader)}</div>` : ''}</div><span class="r">${x.members.length}</span></button>`).join('')}</div>`;
     h += `<div class="foot" style="display:flex;gap:16px;flex-wrap:wrap"><button class="link" style="font-size:15px" data-act="msgNewGroup">Save a new group</button>${g && g.saved ? `<button class="link" style="font-size:15px" data-act="msgEditGroup">Change this group</button>` : ''}</div>`;
-    if (g && (g.youth || g.children)) h += `<div class="section-h"><span>Send to</span></div>${g.children ? '<div class="list"><div class="row"><div class="main"><div class="t">Parents</div><div class="s">Children are reached through their parents.</div></div></div></div>' : `<div class="seg">${[['youth', 'Youth'], ['parents', 'Parents'], ['both', 'Youth + parents']].map(o => `<button class="${M.who === o[0] ? 'on' : ''}" data-act="msgWho" data-v="${o[0]}">${o[1]}</button>`).join('')}</div><p class="foot">Texting youth? Include their parents or another leader.</p>`}`;
+    if (g && (g.youth || g.children)) h += `<div class="section-h"><span>Send to</span></div>${g.children ? '<div class="list"><div class="row"><div class="main"><div class="t">Parents</div><div class="s">Children are reached through their parents.</div></div></div></div>' : `<div class="seg">${[['both', 'Youth + parents'], ['parents', 'Parents only']].map(o => `<button class="${M.who === o[0] ? 'on' : ''}" data-act="msgWho" data-v="${o[0]}">${o[1]}</button>`).join('')}</div><p class="foot">Youth are always texted with a parent, as youth protection asks.</p>`}`;
     h += `<div class="section-h"><span>Message</span><span>${withPhone.length} with a phone${noPhone.length ? ' · ' + noPhone.length + ' without' : ''}${skipped ? ' · ' + skipped + " on Don't text" : ''}</span></div>`;
     const tpl = templates(g);
     if (tpl.length) h += `<div class="dates" style="margin-bottom:6px">${tpl.map((t, i) => `<button class="date" style="min-width:auto" data-act="msgTpl" data-i="${i}"><div class="d" style="font-size:14px;padding:4px 2px;white-space:nowrap">${esc(t[0])}</div></button>`).join('')}</div>`;

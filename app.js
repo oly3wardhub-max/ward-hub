@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.9.2';
+  const VERSION = '2.10.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -186,12 +186,12 @@
       if (d.checklist) {
         const left = d.checklist.filter(c => !c.done).length;
         h += `<div class="section-h big"><span>This week</span><span class="chip ${left ? 'blue' : 'green'}">${left ? left + ' to do' : 'All done'}</span></div><div class="list">` +
-          d.checklist.map(c => `<button class="row ${c.done ? 'done' : ''}" data-act="check" data-id="${c.id}" data-on="${c.done ? 1 : 0}"><span class="check ${c.done ? 'on' : ''}"></span><div class="main"><div class="t">${esc(c.text)}</div>${c.done ? `<div class="s">${esc(c.done)}</div>` : ''}</div></button>`).join('') + '</div>';
+          d.checklist.map(c => `<div class="row ${c.done ? 'done' : ''}"><button data-act="check" data-id="${c.id}" data-on="${c.done ? 1 : 0}" aria-label="Done" style="background:none;border:0;padding:4px 6px 4px 0;margin:0"><span class="check ${c.done ? 'on' : ''}"></span></button><button class="main" ${c.go ? `data-go="${esc(c.go)}"` : ''} style="background:none;border:0;padding:0;text-align:left;color:inherit;font:inherit"><div class="t">${esc(c.text)}</div>${c.done ? `<div class="s">${esc(c.done)}</div>` : ''}</button>${c.go ? I.chev : ''}</div>`).join('') + '</div>';
       }
       h += `<div class="section-h big"><span>Needs you</span>${d.needs.length ? `<span class="chip">${d.needs.length}</span>` : ''}</div>`;
       h += d.needs.length ? '<div class="list">' + d.needs.map(n => {
         const late = n.due && n.due < ymd(today());
-        const go = n.kind === 'sunday' ? `data-go="#/sunday/${n.id}"` : n.kind === 'task' ? `data-act="task" data-id="${esc(n.id)}"` : n.kind === 'announcements' ? `data-go="#/x/announcements"` : n.kind === 'lcr' ? `data-go="#/x/changes"` : n.kind === 'callings' ? `data-go="#/x/changes"` : n.kind === 'inbox' ? `data-go="#/x/inbox"` : n.kind === 'training' ? `data-go="#/x/training"` : n.kind === 'teach' && n.link ? `data-act="openUrl" data-url="${esc(n.link)}"` : '';
+        const go = n.kind === 'emergency' ? 'data-go="#/x/emergency" style="background:var(--red-tint)"' : n.kind === 'sunday' ? `data-go="#/sunday/${n.id}"` : n.kind === 'task' ? `data-act="task" data-id="${esc(n.id)}"` : n.kind === 'announcements' ? `data-go="#/x/announcements"` : n.kind === 'lcr' ? `data-go="#/x/changes"` : n.kind === 'callings' ? `data-go="#/x/changes"` : n.kind === 'inbox' ? `data-go="#/x/inbox"` : n.kind === 'training' ? `data-go="#/x/training"` : n.kind === 'teach' && n.link ? `data-act="openUrl" data-url="${esc(n.link)}"` : '';
         return `<button class="row wrap" ${go}><div class="main"><div class="t">${esc(n.title)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>${n.due ? `<span class="chip ${late ? 'red' : rel(n.due) === 'Today' ? 'orange' : ''}">${esc(rel(n.due))}</span>` : ''}${go ? I.chev : ''}</button>`;
       }).join('') + '</div>' : `<div class="list"><div class="empty">Nothing needs you right now.</div></div>`;
       if (d.sunday) {
@@ -240,7 +240,7 @@
         ${s['Stake visitor'] ? kv('Stake visitor', s['Stake visitor']) : ''}${s['High council'] ? kv('High council', s['High council']) : ''}${s['Stake business'] ? kv('Stake business', 'Yes') : ''}
         ${kv('Organist', s.Organist)}${kv('Chorister', s.Chorister)}</div>`;
       h += `<div class="section-h"><span>Hymns</span></div><div class="list">${['Opening hymn', 'Sacrament hymn', 'Intermediate hymn', 'Closing hymn'].filter(k => k !== 'Intermediate hymn' || s[k]).map(k => kv(k.replace(' hymn', ''), s[k] ? `${s[k]} · ${(d.hymns[k] || {}).title || ''}` : '', 'editSunday')).join('')}</div>`;
-      h += `<div class="section-h"><span>Program</span><button class="link" style="font-size:15px" data-act="addPart">Add</button></div>`;
+      h += `<div class="section-h"><span>Program</span>${WH.isBish() ? '<button class="link" style="font-size:15px" data-act="addPart">Add</button>' : ''}</div>`;
       h += d.participants.length ? '<div class="list">' + d.participants.map(p => `<button class="row" data-act="editPart" data-id="${esc(p.ID)}"><div class="main"><div class="t">${esc(p.Person || '—')}</div><div class="s">${esc(p.Role)}${p.Topic ? ' · ' + esc(p.Topic) : ''}</div></div>${statusChip(p.Status)}${I.chev}</button>`).join('') + '</div>'
         : '<div class="list"><div class="empty">No speakers or prayers yet. Tap Add.</div></div>';
       if (s.Theme || s['Theme text']) h += `<div class="section-h"><span>Theme</span></div><div class="list"><div class="row wrap"><div class="main"><div class="t">${esc(s['Theme text'] || '')}</div><div class="s">${esc(s.Theme || '')}</div></div></div></div>`;
@@ -347,6 +347,7 @@
       ${tel ? `<div class="btns" style="margin-top:4px"><a class="btn gray" href="tel:${tel}">${I.phone.replace('<svg', '<svg width="18" height="18"')} Call</a><a class="btn gray" href="sms:${tel}">${I.msg.replace('<svg', '<svg width="18" height="18"')} Text</a>${p.Email ? `<a class="btn gray" href="mailto:${esc(p.Email)}">${I.mail.replace('<svg', '<svg width="18" height="18"')} Email</a>` : ''}</div>` : ''}
       <div class="section-h"><span>Details</span></div><div class="list">${kv('Phone', p.Phone)}${p['Parent phone'] ? kv('Parent phone', p['Parent phone']) : ''}${kv('Email', p.Email)}${p['Birth date'] ? kv('Birthday', fmt(p['Birth date'], { month: 'long', day: 'numeric' })) : ''}${p.Household ? kv('Household', p.Household) : ''}</div>
       ${cal.length ? `<div class="section-h"><span>Callings</span></div><div class="list">${cal.map(c => `<div class="row"><div class="main"><div class="t">${esc(c.Calling)}</div><div class="s">${esc(c.Organization)}${c.Sustained ? ' · since ' + esc(fmt(c.Sustained, { month: 'short', year: 'numeric' })) : ''}</div></div></div>`).join('')}</div>` : ''}
+      ${(WH.isBish() || (S.boot.me.orgs || []).indexOf(p.Gender === 'F' ? 'Relief Society' : 'Elders Quorum') >= 0) ? `<div class="section-h"><span>Comes to church</span></div><div class="seg">${['Yes', 'Sometimes', 'No', 'Unknown'].map(v => `<button class="${(p.Attends || 'Unknown') === v ? 'on' : ''}" data-act="attends" data-name="${esc(p.Name)}" data-v="${v}">${v}</button>`).join('')}</div><p class="foot">Used for "Those who attend" in Messages.</p>` : ''}
       ${p.Notes ? `<div class="section-h"><span>Notes · bishopric only</span></div><div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-size:15px">${esc(p.Notes)}</div></div></div></div>` : ''}`);
   }
 
@@ -416,8 +417,11 @@
       try { await call('link', { email: em, app: location.origin + location.pathname }); toast('If that address is on file, your link is on its way', true); } catch (e) { toast(e.message); }
     },
     check: async el => {
-      const on = el.dataset.on !== '1'; el.classList.toggle('done', on); $('.check', el).classList.toggle('on', on); el.dataset.on = on ? '1' : '0';
+      const on = el.dataset.on !== '1'; (el.closest('.row') || el).classList.toggle('done', on); $('.check', el).classList.toggle('on', on); el.dataset.on = on ? '1' : '0';
       try { await call('check', { item: el.dataset.id, done: on }); store.del('c:today'); } catch (e) { toast(e.message); }
+    },
+    attends: async el => {
+      try { const r = await call('setAttends', { name: el.dataset.name, value: el.dataset.v }); const p = ((S.people || {}).People || []).find(x => x.Name === el.dataset.name); if (p) p.Attends = r.attends; el.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)); store.del('c:audiences'); toast('Saved', true); } catch (e) { toast(e.message); }
     },
     task: async el => {
       const id = el.dataset.id;
