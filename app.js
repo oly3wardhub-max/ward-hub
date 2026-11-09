@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.7.0';
+  const VERSION = '2.8.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -141,6 +141,7 @@
     const t = tab === 'x' ? 'x' : (can[tab] ? tab : 'today');
     drawTabs(t);
     window.scrollTo(0, 0);
+    if (tab === 'x' && !WH.routes[parts[1]]) { location.hash = '#/more'; return; }
     if (tab === 'x' && WH.routes[parts[1]]) { drawTabs(WH.routes[parts[1]].tab || 'more'); return WH.routes[parts[1]].view(parts.slice(2)); }
     if (tab === 'sunday' && parts[2] && parts[2] !== 'conduct' && WH.routes[parts[2]]) return WH.routes[parts[2]].view([parts[1]]);
     const custom = WH.tabViews[t];
@@ -203,6 +204,8 @@
           ${hymnBlocks(sv.hymns)}</button>`;
       }
       h += `<div class="section-h big"><span>Coming up</span><a href="#/calendar">Calendar</a></div>` + weekList(d.week);
+      const quick = (WH.quick || []).filter(q => !q.show || q.show());
+      if (quick.length) h += `<div class="section-h big"><span>Shortcuts</span></div><div class="quick">${quick.map(q => `<button class="qbtn" data-go="${q.href}"><span class="icon" style="background:${q.color}">${q.icon}</span><span>${esc(q.title)}</span></button>`).join('')}</div>`;
       $('#body').innerHTML = h;
     });
   }
