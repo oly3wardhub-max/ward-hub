@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Feedback for the Bishop</title><meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.12.0">
+</head><body><main class="screen" id="m" style="padding-bottom:40px"></main>
+<script src="config.js?v=2.12.0"></script>
+<script>
+(function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api;
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json());
+  m.innerHTML='<div class="largetitle"><h1>Feedback</h1></div><p class="subtitle">Ideas, concerns or thanks for the bishop. Only he reads these.</p>'+
+    '<div class="list"><div class="field col"><label>Your feedback</label><textarea id="t" rows="7" style="color:var(--text)" placeholder="What would you like the bishop to know?"></textarea></div></div>'+
+    '<div class="section-h"><span>Your name (optional)</span></div><div class="list"><div class="field"><label>Name</label><input id="n" autocomplete="name" placeholder="Leave blank to stay anonymous" style="color:var(--text)"></div><div class="field"><label>Phone or email</label><input id="c" placeholder="If you\'d like a reply" style="color:var(--text)"></div></div>'+
+    '<input id="w" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">'+
+    '<div class="btns"><button class="btn" id="go">Send to the bishop</button></div><p id="e" class="foot" style="text-align:center"></p>'+
+    '<p class="foot">Leave your name blank to send it without your name. For anything urgent, please call or text the bishop.</p>';
+  document.getElementById('go').onclick=async()=>{
+    const v=id=>document.getElementById(id).value, b=document.getElementById('go'), e=document.getElementById('e');
+    if(v('t').trim().length<3){ e.textContent='Please type your feedback.'; return; }
+    b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    const r=await post({action:'feedbackSend',text:v('t'),name:v('n'),contact:v('c'),website:v('w')}).catch(()=>({ok:false,error:'Couldn\'t send. Please try again.'}));
+    if(r.ok) m.innerHTML='<div class="welcome" style="min-height:70vh"><h1>Thank you</h1><p>Your feedback went to the bishop'+(v('n').trim()?'.':', without your name.')+'</p></div>';
+    else { b.disabled=false; b.textContent='Send to the bishop'; e.textContent=r.error||'Couldn\'t send.'; }
+  };
+})();
+</script></body></html>

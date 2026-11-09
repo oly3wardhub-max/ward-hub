@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sign Up</title><meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.12.0">
+<style>.welcome .field input,.field input,.field textarea{color:var(--text)}.field input{text-align:left}</style>
+</head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Sign up</h1></div><div class="skeleton"></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.12.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api, sid=new URLSearchParams(location.search).get('s')||'';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json()).catch(()=>({ok:false,error:'Couldn\'t reach the ward. Check your connection and try again.'}));
+  const pd=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  const day=s=>s?pd(s).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}):'';
+  const key='su:'+sid, get=()=>{try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}, put=v=>{try{localStorage.setItem(key,JSON.stringify(v));}catch(e){}};
+  const me={};try{Object.assign(me,JSON.parse(localStorage.getItem('su:me')||'{}'));}catch(e){}
+  let d=await post({action:'signupPublic',s:sid}), msg='';
+  if(!d.ok){ m.innerHTML='<div class="largetitle"><h1>Sign up</h1></div><div class="list"><div class="empty">'+esc(d.error||'This sign-up link isn\'t recognized.')+'</div></div>'; return; }
+  const slotName=x=>[x.time,x.label].filter(Boolean).join(' · ')||day(x.date);
+  function draw(){
+    let h='<div class="largetitle"><h1 style="font-size:30px;line-height:36px">'+esc(d.title)+'</h1></div><p class="subtitle">'+esc([d.ward,d.org].filter(Boolean).join(' · '))+(d.closes?' · sign up by '+esc(day(d.closes)):'')+'</p>';
+    if(d.description) h+='<div class="list"><div class="row wrap"><div class="main" style="white-space:pre-wrap;font-size:16px">'+esc(d.description)+'</div></div></div>';
+    if(msg) h+='<div class="list" style="margin-top:12px;background:var(--green-tint)"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">'+esc(msg)+'</div></div></div></div>';
+    const mine=get();
+    if(mine.length) h+='<div class="section-h"><span>You signed up</span></div><div class="list">'+mine.map((x,i)=>'<div class="row"><div class="main"><div class="t">'+esc(x.what)+'</div><div class="s">'+esc(x.name)+'</div></div>'+(d.open?'<button class="link" style="color:var(--red)" data-rm="'+i+'">Take my name off</button>':'')+'</div>').join('')+'</div>';
+    if(!d.open){ h+='<div class="list" style="margin-top:14px"><div class="empty">This sign-up is closed. Please contact the organizer if you\'d still like to help.</div></div>'; }
+    if(d.kind==='Dinner groups'){
+      if(d.open&&!mine.length) h+='<div class="section-h"><span>Join dinner groups</span></div><div class="list"><div class="field"><label>Your names</label><input id="nm" autocomplete="name" placeholder="e.g. John & Jane Doe" value="'+esc(me.name||'')+'"></div><div class="field"><label>Phone</label><input id="ph" type="tel" autocomplete="tel" value="'+esc(me.phone||'')+'"></div>'+
+        '<div class="field"><label style="flex:1">We\'re newer to the ward</label><span class="toggle"><input type="checkbox" id="nw"><span></span></span></div></div><div class="btns"><button class="btn" id="go" data-slot="">Sign us up</button></div>'+
+        '<p class="foot">You\'ll be in a group of about '+(d.size||4)+' households. Each takes a turn hosting dinner. Your names and phone go only to the organizers.</p>';
+    } else {
+      let cur='';
+      d.slots.forEach(x=>{
+        const g=x.date?day(x.date):'Anytime';
+        if(g!==cur){ if(cur) h+='</div>'; h+='<div class="section-h"><span>'+esc(g)+'</span></div><div class="list">'; cur=g; }
+        const full=x.need&&x.left===0;
+        h+='<'+(d.open&&!full?'button data-slot="'+esc(x.id)+'"':'div')+' class="row"><div class="main"><div class="t">'+esc(slotName(x))+'</div><div class="s">'+(x.people.length?esc(x.people.join(', ')):'No one yet')+'</div></div>'+
+          (x.need?'<span class="chip '+(full?'':'blue')+'">'+(full?'Full':x.left+' more needed')+'</span>':'')+(d.open&&!full?'<span class="chip green">Sign up</span>':'')+'</'+(d.open&&!full?'button':'div')+'>';
+      });
+      if(cur) h+='</div>';
+      if(!d.slots.length) h+='<div class="list"><div class="empty">Nothing to sign up for yet.</div></div>';
+      h+='<p class="foot">Your name shows on this page as first name and last initial. Your phone number and note go only to the organizer.</p>';
+    }
+    m.innerHTML=h;
+    m.querySelectorAll('[data-slot]').forEach(b=>{ if(b.id!=='go') b.onclick=()=>form(d.slots.find(x=>x.id===b.dataset.slot)); });
+    m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>leave(+b.dataset.rm));
+    const go=document.getElementById('go'); if(go) go.onclick=()=>join(null,go);
+  }
+  function form(x){
+    msg=''; let h='<div class="largetitle"><h1 style="font-size:30px;line-height:36px">'+esc(d.title)+'</h1></div><p class="subtitle">'+esc([x.date?day(x.date):'',slotName(x)].filter(Boolean).join(' · '))+'</p>'+
+      '<div class="list"><div class="field"><label>Your name</label><input id="nm" autocomplete="name" value="'+esc(me.name||'')+'"></div><div class="field"><label>Phone</label><input id="ph" type="tel" autocomplete="tel" value="'+esc(me.phone||'')+'"></div><div class="field col"><label>Note for the organizer (optional)</label><textarea id="no"></textarea></div></div>'+
+      '<div class="btns"><button class="btn" id="go">Sign me up</button></div><div class="btns"><button class="btn gray" id="bk">Back</button></div><p id="er" class="foot" style="text-align:center;color:var(--red)"></p>';
+    m.innerHTML=h; document.getElementById('bk').onclick=draw; const go=document.getElementById('go'); go.onclick=()=>join(x,go); window.scrollTo(0,0);
+  }
+  async function join(x,btn){
+    const v=i=>{const e=document.getElementById(i);return e?(e.type==='checkbox'?e.checked:e.value.trim()):'';};
+    const o={action:'signupJoin',s:sid,slot:x?x.id:'',name:v('nm'),phone:v('ph'),note:v('no'),newer:v('nw')===true};
+    const er=document.getElementById('er');
+    if(!o.name||!o.phone){ if(er) er.textContent='Please add your name and phone.'; else alert('Please add your names and phone.'); return; }
+    btn.disabled=true; const r=await post(o); btn.disabled=false;
+    if(!r.ok){ if(er) er.textContent=r.error; else alert(r.error); return; }
+    me.name=o.name; me.phone=o.phone; try{localStorage.setItem('su:me',JSON.stringify(me));}catch(e){}
+    put(get().concat([{code:r.code,name:o.name,what:x?[x.date?day(x.date):'',slotName(x)].filter(Boolean).join(' · '):'Dinner groups'}]));
+    if(r.slots&&r.slots.length) d.slots=r.slots; msg=r.msg; draw(); window.scrollTo(0,0);
+  }
+  async function leave(i){
+    const mine=get(), x=mine[i]; if(!x||!confirm('Take your name off '+x.what+'?')) return;
+    const r=await post({action:'signupLeave',s:sid,code:x.code});
+    if(r.ok||/Already/.test(r.error||'')){ mine.splice(i,1); put(mine); if(r.slots&&r.slots.length) d.slots=r.slots; msg=r.ok?r.msg:''; draw(); } else alert(r.error);
+  }
+  draw();
+})();
+</script></body></html>

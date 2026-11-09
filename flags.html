@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Flag Route</title><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.12.0">
+<style>.num{flex:none;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+@media print{.noprint{display:none!important}.list{border:1px solid #999}body{background:#fff}}</style>
+</head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Flags</h1></div><div class="skeleton"></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.12.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api, t=new URLSearchParams(location.search).get('t')||'';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json());
+  const pd=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  const apple=/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+  let d; try{ d=await post({action:'flagCrew',t}); }catch(e){ d={ok:false,error:'Couldn\'t load. Check your connection and try again.'}; }
+  if(!d.ok){ m.innerHTML='<div class="largetitle"><h1>Flags</h1></div><div class="list"><div class="empty">'+esc(d.error||'This link isn\'t recognized.')+'</div></div>'; return; }
+  const full=a=>a+(d.city&&a.toLowerCase().indexOf(d.city.split(',')[0].toLowerCase())<0?', '+d.city:'');
+  const one=a=>(apple?'https://maps.apple.com/?q=':'https://www.google.com/maps/search/?api=1&query=')+encodeURIComponent(full(a));
+  const legs=[];for(let i=0;i<d.homes.length;i+=10){const L=d.homes.slice(i,i+10),q=h=>encodeURIComponent(full(h.address));legs.push('https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+q(L[L.length-1])+(L.length>1?'&waypoints='+L.slice(0,-1).map(q).join('%7C'):''));}
+  let h='<div class="largetitle"><h1>'+esc(d.holiday)+'</h1></div><p class="subtitle">'+esc(d.ward||'')+' · flags · '+esc(d.zone)+'</p>';
+  h+='<div class="hero"><div class="k">'+esc(pd(d.date).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}))+'</div><div class="big">'+d.homes.length+' homes · '+d.flags+' flags</div>'+
+    '<div style="font-size:16px;line-height:1.5">'+(d.start?'Set up by <b>'+esc(d.start)+'</b>':'Set up early in the morning')+(d.end?'<br>Take down after <b>'+esc(d.end)+'</b>':'')+(d.pickup?'<br>Flags: '+esc(d.pickup):'')+'</div></div>';
+  if(legs.length) h+='<div class="btns noprint">'+legs.map((l,i)=>'<a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="'+esc(l)+'">Directions'+(legs.length>1?' ('+(i+1)+')':' for the route')+'</a>').join('')+'</div>';
+  h+='<div class="section-h"><span>Homes in order</span></div><div class="list">'+(d.homes.map(x=>'<div class="row"><span class="num">'+x.n+'</span><div class="main"><div class="t">'+esc(x.address)+'</div><div class="s">'+esc(x.name)+(x.flags>1?' · <b>'+x.flags+' flags</b>':'')+(x.placement?' · '+esc(x.placement):'')+'</div></div><a class="btn small gray noprint" style="text-decoration:none" target="_blank" rel="noopener" href="'+esc(one(x.address))+'">Map</a></div>').join('')||'<div class="empty">No homes in this zone yet.</div>')+'</div>';
+  h+='<div class="btns noprint"><button class="btn gray" id="pr">Print</button></div>';
+  if(d.crew.length){
+    h+='<div class="section-h"><span>Your crew</span></div><div class="list">'+d.crew.map(c=>'<div class="row"><div class="main"><div class="t">'+esc(c.name)+'</div></div>'+(c.status==='Trade asked'?'<span class="chip orange">Asked to trade</span>':'')+'</div>').join('')+'</div>';
+    h+='<div class="noprint"><div class="section-h"><span>Can\'t make it?</span></div><div class="list"><div class="field"><label>I am</label><select id="who" style="color:var(--text)"><option value=""></option>'+d.crew.map(c=>'<option>'+esc(c.name)+'</option>').join('')+'</select></div><div class="field col"><label>Anything the coordinator should know</label><textarea id="note" placeholder="e.g. Out of town; I could do Labor Day instead"></textarea></div></div>'+
+      '<div class="btns"><button class="btn gray" id="tr">Ask to trade</button></div><p id="msg" class="foot" style="text-align:center"></p></div>';
+  }
+  h+='<p class="foot">Please keep this page to your crew: it has neighbors\' names and addresses. It stops working two days after the holiday. Thank you for helping!</p>';
+  m.innerHTML=h;
+  document.getElementById('pr').onclick=()=>window.print();
+  const tr=document.getElementById('tr');
+  if(tr) tr.onclick=async()=>{ const who=document.getElementById('who').value, msg=document.getElementById('msg'); if(!who){ msg.textContent='Pick your name.'; return; }
+    tr.disabled=true; const r=await post({action:'flagTrade',t,who,note:document.getElementById('note').value}).catch(()=>({ok:false,error:'Couldn\'t send. Try again.'})); tr.disabled=false;
+    msg.textContent=r.ok?r.msg:r.error; if(r.ok) tr.style.display='none'; };
+})();
+</script></body></html>
