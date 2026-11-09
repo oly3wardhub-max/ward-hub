@@ -33,6 +33,8 @@
     clerk: ['For LCR', 'People › Callings › For LCR lists each calling and release to record. Tap Recorded when it\'s in LCR.'],
     zones: ['Elders quorum zones', 'More › Elders quorum zones: change zone members and leaders. Add a turn (chairs, snow) and it rotates through the zones by itself, with a button to text this week\'s zone.'],
     teacher: ['Teaching', 'Today shows the lesson you teach next with its link. Messages lets you text your class (and their parents).'],
+    connect: ['Getting your calendar and lists in', 'More › Calendar and lists. Pick the way your organization already works: just use the app (Calendar › Add), link the Google Calendar, Sheet or Doc you already keep (share it with the ward account first, then it updates itself every night), paste a list copied from a spreadsheet, or scan a printed page. Kevin checks what comes in from links.'],
+    setupmtg: ['Setup meetings', 'Meet each president for 15 minutes with More › Calendar and lists open on their phone: send their link, ask how they keep their calendar, lessons and phone list, and link, paste or scan each one together. Then check the inbox each week, and turn on Auto-approve for sources you trust.'],
     newsletter: ['Newsletter', 'More › Newsletter › New. Write the items (a blank line between each), turn on the calendar, then "Send from my email": copy the newsletter, copy the addresses into Bcc, and send.'],
     permits: ['Permission forms', 'For a trip or overnight activity, turn on "Youth need permission forms" on the calendar item (or More › Permission forms › Add). Text the parents the form link, and tap each name as forms come in.'],
     funerals: ['Funerals', 'More › Funerals › New puts it on the calendar, reserves the building and hands out the usual tasks. Fill in the program as the family decides, then Print the order of service.'],
@@ -43,10 +45,10 @@
     view() {
       const r = (WH.S.boot && WH.S.boot.me.roles) || {}, { esc } = WH;
       let keys = ['install', 'today'];
-      if (r.admin) keys = keys.concat(['kevin', 'sunday', 'program', 'conduct', 'callings', 'links', 'lcr', 'msgs', 'youth', 'funerals', 'ask']);
+      if (r.admin) keys = keys.concat(['kevin', 'sunday', 'program', 'conduct', 'callings', 'links', 'lcr', 'msgs', 'youth', 'funerals', 'ask', 'setupmtg', 'connect']);
       else if (r.bishopric) keys = keys.concat(['sunday', 'program', 'conduct', 'callings', 'msgs', 'youth', 'funerals', 'ask']);
       else if (r.clerk) keys = keys.concat(['clerk', 'lcr']);
-      if (r.leader && !r.bishopric) keys = keys.concat(['msgs', 'youth', 'lessons', 'classes', 'cal', 'ann']);
+      if (r.leader && !r.bishopric) keys = keys.concat(['connect', 'msgs', 'youth', 'lessons', 'classes', 'cal', 'ann']);
       if ((WH.S.boot.me.orgs || []).indexOf('Elders Quorum') >= 0) keys.push('zones');
       if (['Relief Society', 'Elders Quorum'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('newsletter');
       if (['Young Women', 'Young Men', 'Primary'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('permits');
