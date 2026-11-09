@@ -1,6 +1,6 @@
 /* Keeps the app's screens on the phone so it opens instantly, even offline. Ward data is never stored here. */
-const V = 'wh-2.6.1';
-const SHELL = ['./', 'index.html', 'app.css?v=2.6.1', 'config.js?v=2.6.1', 'demo.js?v=2.6.1', 'qrcode.js?v=2.6.1', 'progview.js?v=2.6.1', 'm_10_program.js?v=2.6.1', 'm_20_messages.js?v=2.6.1', 'm_30_calendar.js?v=2.6.1', 'm_40_people.js?v=2.6.1', 'm_50_leaders.js?v=2.6.1', 'm_60_admin.js?v=2.6.1', 'm_70_extras.js?v=2.6.1', 'm_80_lists.js?v=2.6.1', 'app.js?v=2.6.1', 'manifest.webmanifest', 'icons/icon-192.png'];
+const V = 'wh-2.7.0';
+const SHELL = ['./', 'index.html', 'app.css?v=2.7.0', 'config.js?v=2.7.0', 'demo.js?v=2.7.0', 'qrcode.js?v=2.7.0', 'progview.js?v=2.7.0', 'm_10_program.js?v=2.7.0', 'm_20_messages.js?v=2.7.0', 'm_30_calendar.js?v=2.7.0', 'm_40_people.js?v=2.7.0', 'm_50_leaders.js?v=2.7.0', 'm_60_admin.js?v=2.7.0', 'm_70_extras.js?v=2.7.0', 'm_75_turns.js?v=2.7.0', 'm_80_lists.js?v=2.7.0', 'app.js?v=2.7.0', 'manifest.webmanifest', 'icons/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

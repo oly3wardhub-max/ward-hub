@@ -27,7 +27,7 @@ var SCHEMA = {"tabs":[
   {"name":"Sources","section":"Engine","cols":[["ID","id"],["Organization","org"],["Kind","choice:Google Calendar,Google Sheet,Google Doc,iCal,Upload"],["Link","link"],["Goes to","choice:Events,Teaching,Groups,People,Announcements"],["Auto-approve","bool"],["Schedule","choice:Nightly,Weekly,Manual"],["Last read","datetime"],["Result","text"]],"read":["admin"],"edit":["admin"],"scope":null,"note":"Where each organization's calendar, lists and schedules come from.","help":["","","","","","","","",""]},
   {"name":"Inbox","section":"Engine","cols":[["ID","id"],["Received","datetime"],["From","text"],["Kind","text"],["Summary","text"],["Data","json"],["Status","choice:New,Approved,Edited,Skipped"],["Decided by","text"],["Decided on","datetime"]],"read":["admin"],"edit":["admin"],"scope":null,"note":"Things the Hub read that need a person's OK.","help":["","","","","","What the Hub read","","",""]},
   {"name":"Log","section":"Engine","cols":[["When","datetime"],["Who","text"],["Action","text"],["Tab","text"],["Row","text"],["Detail","text"]],"read":["admin"],"edit":[],"scope":null,"note":"Every change, newest first. Kept 18 months.","help":["","","","","",""]},
-  {"name":"Library","section":"Library","cols":[["ID","id"],["Kind","choice:Quote,Image,Talk prompt,Agenda template,Event template,Funeral quote,Sacrament sentiment,Zone duty"],["Title","text"],["Text","text"],["Source","text"],["Link","link"],["Best for","text"],["Notes","text"]],"read":["admin","bishopric","clerk","leader","music"],"edit":["admin","bishopric"],"scope":null,"note":"Quotes, pictures, talk prompts and templates.","help":["","","","","","","",""]},
+  {"name":"Library","section":"Library","cols":[["ID","id"],["Kind","choice:Quote,Image,Talk prompt,Agenda template,Event template,Funeral quote,Sacrament sentiment,Zone duty,Rotation"],["Title","text"],["Text","text"],["Source","text"],["Link","link"],["Best for","text"],["Notes","text"]],"read":["admin","bishopric","clerk","leader","music"],"edit":["admin","bishopric"],"scope":null,"note":"Quotes, pictures, talk prompts and templates.","help":["","","","","","","",""]},
   {"name":"Hymns","section":"Library","cols":[["Number","id"],["Title","text"],["Book","choice:Hymns,Hymns\u2014For Home and Church,Children's Songbook"]],"read":["admin","bishopric","clerk","leader","music","member"],"edit":["admin","music"],"scope":null,"note":"Hymn numbers and titles.","help":["","",""]}
 ],"settings":[
   ["ward_name", "Ward", "Ward name", "", "Shown at the top of the app and program"],
@@ -1526,6 +1526,52 @@ ACTIONS.scan = function (req, me) {
   var events = (out.events || []).filter(function (e) { return /^\d{4}-\d\d-\d\d$/.test(e.date || '') && e.title; }).slice(0, 80);
   var id = save_(me, 'Inbox', { Received: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), From: me.name + ' · ' + org, Kind: 'Calendar scan', Summary: (out.summary || 'Calendar') + ' · ' + events.length + ' dates', Data: JSON.stringify({ org: org, events: events }), Status: 'New' }, { system: true });
   return { id: id, events: events, summary: out.summary || '' };
+};
+
+
+/* ================= Turns: rotating family assignments (building cleaning, flags, …) ================= */
+function contactsFor_(g, byName) {
+  var out = [], p = byName[nkey_(g.Person)];
+  if (p) return p.Phone ? [{ n: p.Name, p: p.Phone, e: p.Email }] : [{ n: p.Name, p: '', e: p.Email }];
+  var m = String(g.Person).match(/^([^,]+),\s*(.+)$/);
+  if (m) m[2].split(/\s*&\s*|\s+and\s+/).forEach(function (f) { var q = byName[nkey_(f.trim() + ' ' + m[1].trim())]; if (q) out.push({ n: q.Name, p: q.Phone, e: q.Email }); });
+  if (!out.length) (String(g.Notes || '').match(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g) || []).forEach(function (ph) { out.push({ n: g.Person, p: ph, e: '' }); });
+  return out;
+}
+function rotations_() {
+  return rows_('Library').filter(function (l) { return l.Kind === 'Rotation'; }).map(function (l) {
+    var o = {}; try { o = JSON.parse(l.Notes || '{}'); } catch (e) {}
+    return { id: l.ID, name: l.Title, msg: l.Text, org: l.Source || 'Ward', kind: o.kind || 'Cleaning', group: o.group || '', per: Math.max(1, +o.per || 1), offset: +o.offset || 0, every: Math.max(1, +o.every || 1), start: o.start || '', months: o.months || '', day: o.day || '' };
+  });
+}
+ACTIONS.turns = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.leader)) throw new Error('Turns are for leaders.');
+  var byName = {}; rows_('People').forEach(function (p) { byName[nkey_(p.Name)] = p; });
+  var G = rows_('Groups'), sun = nextSunday_(), mon = Utilities.formatDate(sun, tz_(), 'MMM').toLowerCase();
+  var list = rotations_().map(function (r) {
+    var mem = G.filter(function (g) { return g.Kind === r.kind && (!r.group || g.Group === r.group) && !/^skip/i.test(String(g.Notes || '')); }).sort(function (a, b) { return String(a.Person).localeCompare(String(b.Person)); });
+    var start = r.start ? parseYmd_(r.start) : sun, n = mem.length;
+    var months = String(r.months || '').split(/\s*,\s*/).filter(Boolean), active = !months.length || months.some(function (x) { return x.slice(0, 3).toLowerCase() === mon; });
+    var slice = function (k) {
+      if (!n) return [];
+      var w = Math.floor(Math.round((sun.getTime() + k * r.every * 7 * 864e5 - start.getTime()) / 864e5) / (7 * r.every)), out = [];
+      for (var i = 0; i < Math.min(r.per, n); i++) out.push(mem[(((r.offset + w * r.per + i) % n) + n) % n]);
+      return out.map(function (g) { return { name: g.Person, contacts: contactsFor_(g, byName) }; });
+    };
+    var first = [];
+    if (start > sun && n) for (var j = 0; j < Math.min(r.per, n); j++) { var g = mem[((r.offset + j) % n + n) % n]; first.push({ name: g.Person, contacts: contactsFor_(g, byName) }); }
+    return Object.assign(r, { count: n, active: active, now: active && start <= sun ? slice(0) : [], next: active && start <= sun ? slice(1) : [], first: first, week: ymd_(sun) });
+  });
+  var kinds = {}; G.forEach(function (g) { if (/Cleaning|Flags|Dinner group|Other/.test(g.Kind)) { kinds[g.Kind + '|' + g.Group] = 1; } });
+  return { turns: list, groups: Object.keys(kinds).map(function (k) { var a = k.split('|'); return { kind: a[0], group: a[1] }; }) };
+};
+ACTIONS.saveTurn = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Only the bishopric and executive secretary change turns.');
+  var d = req.turn || {};
+  if (req.remove) { remove_(me, 'Library', d.id); return {}; }
+  if (!String(d.name || '').trim()) throw new Error('Name it.');
+  return { id: save_(me, 'Library', { ID: d.id || '', Kind: 'Rotation', Title: String(d.name).slice(0, 60), Text: String(d.msg || '').slice(0, 500), Source: d.org || 'Ward',
+    Notes: JSON.stringify({ kind: d.kind || 'Cleaning', group: d.group || '', offset: +d.offset || 0, per: Math.max(1, +d.per || 1), every: Math.max(1, +d.every || 1), start: d.start || ymd_(nextSunday_()), months: d.months || '', day: d.day || '' }) }, { system: true }) };
 };
 
 
