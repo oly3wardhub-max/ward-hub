@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Book a Time</title><meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.5.0">
+</head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Book a time</h1></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.5.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api, w=new URLSearchParams(location.search).get('with')||'';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json());
+  const pd=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  async function load(){
+    let d; try{ d=await post({action:'slots',with:w}); }catch(e){ m.innerHTML='<div class="largetitle"><h1>Book a time</h1></div><p class="subtitle">Couldn\'t load. Try again.</p>'; return; }
+    const by={}; (d.slots||[]).forEach(s=>(by[s.date]=by[s.date]||[]).push(s));
+    let h='<div class="largetitle"><h1>Book a time</h1></div><p class="subtitle">'+esc(d.ward||'')+(w?' · with the '+esc(w.toLowerCase()):'')+'</p>';
+    const days=Object.keys(by).sort();
+    if(!days.length) h+='<div class="list"><div class="empty">No times are open right now. Please check back soon.</div></div>';
+    days.forEach(day=>{ h+='<div class="section-h"><span>'+esc(pd(day).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}))+'</span></div><div class="list">'+by[day].map(s=>s.open?'<button class="row" data-id="'+esc(s.id)+'" data-t="'+esc(day+' '+s.time)+'"><div class="main"><div class="t">'+esc(s.time)+'</div><div class="s">'+esc([s.minutes?s.minutes+' minutes':'',s.place].filter(Boolean).join(' · '))+'</div></div><span class="chip blue">Open</span></button>':'<div class="row" style="opacity:.5"><div class="main"><div class="t">'+esc(s.time)+'</div></div><span class="chip">Taken</span></div>').join('')+'</div>'; });
+    m.innerHTML=h;
+    m.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>pick(b.dataset.id,b.dataset.t));
+  }
+  function pick(id,label){
+    m.innerHTML='<div class="largetitle"><h1>Book a time</h1></div><p class="subtitle">'+esc(label)+'</p><div class="list"><div class="field"><label>Your name</label><input id="n" autocomplete="name" style="color:var(--text)"></div><div class="field"><label>Phone</label><input id="p" type="tel" autocomplete="tel" style="color:var(--text)"></div><div class="field col"><label>Anything we should know? (optional)</label><textarea id="x"></textarea></div></div><div class="btns"><button class="btn" id="go">Book it</button></div><div class="btns"><button class="btn gray" id="bk">Pick another time</button></div><p id="e" class="foot" style="text-align:center"></p><p class="foot">Only the bishop and executive secretary see who booked.</p>';
+    document.getElementById('bk').onclick=load;
+    document.getElementById('go').onclick=async()=>{ const r=await post({action:'book',id,name:document.getElementById('n').value,phone:document.getElementById('p').value,note:document.getElementById('x').value}).catch(()=>({ok:false,error:'Couldn\'t send. Try again.'}));
+      if(r.ok) m.innerHTML='<div class="welcome" style="min-height:70vh"><h1>You\'re booked</h1><p>'+esc(pd(r.date).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}))+' at '+esc(r.time)+'<br>with the '+esc(String(r.with).toLowerCase())+(r.place?'<br>'+esc(r.place):'')+'</p><p>If you need to change it, please text or call the executive secretary.</p></div>';
+      else document.getElementById('e').textContent=r.error; };
+  }
+  load();
+})();
+</script></body></html>

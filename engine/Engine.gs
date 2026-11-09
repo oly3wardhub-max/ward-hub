@@ -20,7 +20,7 @@ var SCHEMA = {"tabs":[
   {"name":"Meetings","section":"Leaders","cols":[["ID","id"],["Type","choice:Bishopric,Ward council,Youth council,PEC,Other"],["Date","date"],["Time","time"],["Status","choice:Planned,Held,Cancelled"],["Opening prayer","person"],["Spiritual thought","person"],["Closing prayer","person"],["Notes","text"],["Minutes sent","date"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric"],"scope":null,"note":"Meetings. Agenda items are on Agenda.","help":["","","","","","","","","",""]},
   {"name":"Agenda","section":"Leaders","cols":[["ID","id"],["Meeting","ref:Meetings"],["Order","number"],["Item","text"],["Lead","text"],["Minutes","number"],["Notes","text"],["Decision","text"],["Source","text"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric"],"scope":null,"note":"Agenda items and minutes for each meeting.","help":["","","","","","","","",""]},
   {"name":"Tasks","section":"Leaders","cols":[["ID","id"],["Task","text"],["Owner","text"],["Organization","org"],["Due","date"],["Status","choice:Not started,In progress,Waiting,Done"],["Source","text"],["Notes","text"],["Created","date"],["Done on","date"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric","clerk","leader"],"scope":"Organization","note":"Everyone's to-dos.","help":["","","Name or calling","","","","Meeting, Sunday or calling change","","",""]},
-  {"name":"Appointments","section":"Leaders","cols":[["ID","id"],["Date","date"],["Time","time"],["Minutes","number"],["With","choice:Bishop,First counselor,Second counselor,Executive secretary,Clerk"],["Person","person"],["Purpose","text"],["Place","text"],["Status","choice:Open,Booked,Done,Cancelled,No-show"],["Source","text"],["Phone","phone"],["Notes","text"],["Calendar event","text"],["Reminded","date"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Interviews and appointments. Booking pages show only open or taken, never who.","help":["","","","","","","Hidden from everyone but the bishopric and Kevin","","","","","","",""]},
+  {"name":"Appointments","section":"Leaders","cols":[["ID","id"],["Date","date"],["Time","time"],["Minutes","number"],["With","choice:Bishop,First counselor,Second counselor,Executive secretary,Clerk"],["Person","person"],["Purpose","text"],["Place","text"],["Status","choice:Open,Booked,Done,Cancelled,No-show"],["Source","text"],["Phone","phone"],["Notes","text"],["Calendar event","text"],["Reminded","date"]],"read":["admin"],"edit":["admin","bishopric"],"scope":null,"note":"Interviews and appointments. Booking pages show only open or taken, never who. Counselors see names only for their own.","help":["","","","","","","Hidden from everyone but the bishopric and Kevin","","","","","","",""]},
   {"name":"Training","section":"Leaders","cols":[["ID","id"],["Person","person"],["Calling","text"],["Course","text"],["Completed","date"],["Expires","date"],["Emailed 60","date"],["Texted 30","date"],["Texted 15","date"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin"],"scope":null,"note":"Youth protection training, from the LCR report.","help":["","","","Protecting Children and Youth","","","","","",""]},
   {"name":"Recommends","section":"Leaders","cols":[["ID","id"],["Person","person"],["Type","text"],["Expires","date"],["Updated","date"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Temple recommend expirations. Bishopric only.","help":["","","","",""]},
   {"name":"Missionaries","section":"Leaders","cols":[["ID","id"],["Name","text"],["Title","choice:Elder,Sister,Couple"],["Mission","text"],["Email","email"],["Left","date"],["Home","date"],["On program","bool"],["Notes","text"]],"read":["admin","bishopric","clerk","member"],"edit":["admin","bishopric"],"scope":null,"note":"Missionaries serving from the ward.","help":["","","","","","","Expected","",""]},
@@ -546,6 +546,7 @@ function setUp() {
   var have = {}; rows_('Settings').forEach(function (r) { have[r.Key] = 1; });
   SCHEMA.settings.forEach(function (s) { if (!have[s[0]]) save_(null, 'Settings', { Key: s[0], Section: s[1], Setting: s[2], Value: s[3], Help: s[4] }, { system: true, quiet: true }); });
   try { repairs_(); } catch (e) { log_('Hub', 'repair', '', '', String(e)); }
+  try { installJobs_(); } catch (e) { log_('Hub', 'jobs', '', '', String(e)); }
   var blank = ss_().getSheetByName('Sheet1'); if (blank && blank.getLastRow() === 0 && ss_().getSheets().length > 1) ss_().deleteSheet(blank);
   var me = Session.getEffectiveUser().getEmail(), a = null;
   rows_('Access').some(function (r) { if (String(r.Email).toLowerCase() === String(me).toLowerCase()) { a = r; return true; } return false; });
@@ -1161,6 +1162,286 @@ ACTIONS.lcrApply = function (req, me) {
   log_(me.name, 'LCR paste', d.kind, '', d.add.length + ' new, ' + d.change.length + ' changed, ' + d.gone.length + ' gone');
   return { diff: d, applied: n };
 };
+
+
+/* ================= Leaders: meetings and minutes, tasks, announcements, appointments and booking, youth protection, inbox ================= */
+function strip_(r) { var o = {}; for (var k in r) if (k !== '_r') o[k] = r[k]; return o; }
+
+/* ---------- meetings ---------- */
+function canMeeting_(me, type) { return isBishopric_(me) || me.roles.clerk || (type === 'Ward council' && me.roles.leader); }
+function ensureMeetings_() {
+  var have = {}; rows_('Meetings').forEach(function (m) { have[m.Type + '|' + m.Date] = 1; });
+  meetingsFor_(today_(), 21).forEach(function (m) {
+    if (have[m.type + '|' + m.date]) return;
+    var id = (m.type === 'Bishopric' ? 'BM-' : 'WC-') + m.date;
+    save_(null, 'Meetings', { ID: id, Type: m.type, Date: m.date, Time: m.time || '', Status: 'Planned' }, { system: true, quiet: true });
+    rows_('Library').filter(function (l) { return l.Kind === 'Agenda template' && l.Title === m.type; }).forEach(function (l, i) {
+      var mins = String(l.Notes || '').match(/(\d+)\s*min/);
+      save_(null, 'Agenda', { Meeting: id, Order: i + 1, Item: l.Text, Lead: l['Best for'] || '', Minutes: mins ? +mins[1] : '', Source: 'Template' }, { system: true, quiet: true });
+    });
+  });
+}
+ACTIONS.meetings = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.clerk || me.roles.leader)) throw new Error('Meetings are for leaders.');
+  try { ensureMeetings_(); } catch (e) {}
+  var from = ymd_(addDays_(today_(), -60));
+  var list = rows_('Meetings').filter(function (m) { return m.Date >= from && canMeeting_(me, m.Type); }).map(strip_)
+    .sort(function (a, b) { return a.Date.localeCompare(b.Date); });
+  return { meetings: list };
+};
+ACTIONS.meeting = function (req, me) {
+  var m = rows_('Meetings').filter(function (x) { return x.ID === req.id; })[0]; if (!m || !canMeeting_(me, m.Type)) throw new Error('Not found');
+  var items = rows_('Agenda').filter(function (a) { return a.Meeting === m.ID; }).map(strip_).sort(function (a, b) { return (+a.Order || 0) - (+b.Order || 0); });
+  var tasks = rows_('Tasks').filter(function (t) { return t.Source === m.ID || t.Source === m.Type + ' ' + m.Date; }).map(strip_);
+  var attendees = m.Type === 'Ward council' ? ACTIONS.audiences({}, Object.assign({}, me, { roles: { admin: 1, bishopric: 1 }, orgs: [] })).groups.filter(function (g) { return g.id === 'council'; })[0] : null;
+  return { meeting: strip_(m), items: items, tasks: tasks, canEdit: isBishopric_(me), emails: attendees ? attendees.members.map(function (x) { return x.e; }).filter(Boolean) : [] };
+};
+/* Leaders can put an item on the ward council agenda. */
+ACTIONS.agendaAdd = function (req, me) {
+  var m = rows_('Meetings').filter(function (x) { return x.ID === req.meeting; })[0]; if (!m || !canMeeting_(me, m.Type)) throw new Error('Not found');
+  var n = rows_('Agenda').filter(function (a) { return a.Meeting === m.ID; }).length;
+  return { id: save_(me, 'Agenda', { Meeting: m.ID, Order: n + 1, Item: String(req.item || '').slice(0, 300), Lead: req.lead || me.name, Minutes: req.minutes || '', Source: me.name }, { system: true }) };
+};
+ACTIONS.minutesSent = function (req, me) { if (!isBishopric_(me)) throw new Error('Only the bishopric sends minutes.'); save_(me, 'Meetings', { ID: req.id, 'Minutes sent': ymd_(today_()), Status: 'Held' }, { system: true }); return {}; };
+
+/* ---------- tasks ---------- */
+ACTIONS.tasks = function (req, me) {
+  var rows = visible_(me, 'Tasks'), myk = nkey_(me.name), cal = (me.callings || []).map(nkey_);
+  var mine = function (t) { var o = nkey_(t.Owner); return o && (o.indexOf(myk) >= 0 || myk.indexOf(o) >= 0 || cal.some(function (c) { return c && (c.indexOf(o) >= 0 || o.indexOf(c) >= 0); })) || (me.roles.admin && /executive|secretary/i.test(t.Owner)); };
+  return { tasks: rows.map(function (t) { t.mine = !!mine(t); return t; }).sort(function (a, b) { return String(a.Due || '9999').localeCompare(String(b.Due || '9999')); }), canAll: isBishopric_(me) };
+};
+
+/* ---------- announcements ---------- */
+ACTIONS.announcements = function (req, me) {
+  var t = ymd_(today_());
+  var rows = visible_(me, 'Announcements').filter(function (a) { return a.Status === 'New' || ((a.Through || a['Event date'] || '9999') >= t && a.Status !== 'Declined' && a.Status !== 'Done'); });
+  return { list: rows, canApprove: isBishopric_(me), orgs: isBishopric_(me) ? ORG_LIST_ : me.orgs };
+};
+
+/* ---------- appointments and public booking ---------- */
+PUBLIC_ACTIONS.slots = 1; PUBLIC_ACTIONS.book = 1;
+ACTIONS.appointments = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Appointments are for the bishopric and executive secretary.');
+  var from = ymd_(addDays_(today_(), -1));
+  var cal = (me.callings || []).join('|'), myWith = /First Counselor/i.test(cal) ? 'First counselor' : /Second Counselor/i.test(cal) ? 'Second counselor' : /Clerk/i.test(cal) ? 'Clerk' : '';
+  var list = rows_('Appointments').filter(function (a) { return a.Date >= from && a.Status !== 'Cancelled'; }).map(strip_)
+    .map(function (a) { if (!me.roles.admin && a.With !== myWith) { a.Person = a.Status === 'Booked' ? 'Booked' : ''; a.Purpose = ''; a.Phone = ''; a.Notes = ''; } return a; })
+    .sort(function (a, b) { return (a.Date + timeKey_(a.Time)).localeCompare(b.Date + timeKey_(b.Time)); });
+  return { list: list, withList: ['Bishop', 'First counselor', 'Second counselor', 'Executive secretary', 'Clerk'] };
+};
+ACTIONS.makeSlots = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Only the bishopric and executive secretary make booking times.');
+  var d = String(req.date || ''), mins = Math.max(5, +req.minutes || 15), start = timeKey_(req.start), end = timeKey_(req.end);
+  if (!/^\d{4}-\d\d-\d\d$/.test(d) || start === '99:99' || end === '99:99' || start >= end) throw new Error('Check the date and times.');
+  var toMin = function (k) { return +k.slice(0, 2) * 60 + +k.slice(3); }, fmtT = function (m) { var h = Math.floor(m / 60), mm = m % 60; return ((h % 12) || 12) + ':' + ('0' + mm).slice(-2) + ' ' + (h < 12 ? 'AM' : 'PM'); };
+  var n = 0;
+  for (var m = toMin(start); m + mins <= toMin(end); m += mins) {
+    save_(me, 'Appointments', { Date: d, Time: fmtT(m), Minutes: mins, With: req.with || 'Bishop', Status: 'Open', Place: req.place || '', Source: req.kind || 'Booking', Purpose: req.kind || '' }, { system: true, quiet: true }); n++;
+  }
+  log_(me.name, 'slots', 'Appointments', d, n + ' times with ' + (req.with || 'Bishop'));
+  return { made: n };
+};
+/* Public: open and taken times only. Never who booked, never why. */
+ACTIONS.slots = function (req) {
+  var w = String(req['with'] || ''), from = ymd_(today_());
+  var list = rows_('Appointments').filter(function (a) { return a.Date >= from && (!w || a.With === w) && (a.Status === 'Open' || a.Status === 'Booked') && /Booking|Tithing|Interview/i.test(a.Source || ''); })
+    .map(function (a) { return { id: a.Status === 'Open' ? a.ID : '', date: a.Date, time: a.Time, minutes: a.Minutes, with: a.With, place: a.Place, open: a.Status === 'Open', kind: a.Source }; })
+    .sort(function (a, b) { return (a.date + timeKey_(a.time)).localeCompare(b.date + timeKey_(b.time)); });
+  return { ward: setting_('ward_name'), slots: list };
+};
+ACTIONS.book = function (req) {
+  var name = String(req.name || '').trim(), phone = String(req.phone || '').trim();
+  if (!name || !phone) return { ok: false, error: 'Please add your name and phone number.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    var a = rows_('Appointments').filter(function (x) { return x.ID === req.id; })[0];
+    if (!a || a.Status !== 'Open') return { ok: false, error: 'Sorry, that time was just taken. Please pick another.' };
+    save_(null, 'Appointments', { ID: a.ID, Status: 'Booked', Person: name.slice(0, 80), Phone: phone.slice(0, 30), Notes: String(req.note || '').slice(0, 300) }, { system: true });
+    return { date: a.Date, time: a.Time, with: a.With, place: a.Place };
+  } finally { lock.releaseLock(); }
+};
+
+/* ---------- youth protection training ---------- */
+ACTIONS.training = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Youth protection is for the bishopric and executive secretary.');
+  var t = ymd_(today_()), ppl = {}; rows_('People').forEach(function (p) { ppl[nkey_(p.Name)] = p; });
+  var list = rows_('Training').map(function (r) {
+    var o = strip_(r), days = r.Expires ? Math.round((parseYmd_(r.Expires) - parseYmd_(t)) / 864e5) : null;
+    o.days = days; o.phone = (ppl[nkey_(r.Person)] || {}).Phone || ''; o.state = days === null ? 'unknown' : days < 0 ? 'expired' : days <= 15 ? 'due15' : days <= 30 ? 'due30' : days <= 60 ? 'due60' : 'ok';
+    return o;
+  }).sort(function (a, b) { return (a.days === null ? 99999 : a.days) - (b.days === null ? 99999 : b.days); });
+  return { list: list, link: setting_('ypt_link') };
+};
+/* Paste the LCR youth protection report: lines with a name and dates. */
+ACTIONS.trainingPaste = function (req, me) {
+  if (!me.roles.admin) throw new Error('Only the executive secretary and bishop update training.');
+  var lines = String(req.text || '').replace(/\r/g, '').split('\n'), people = rows_('People'), bySort = {}, byName = {};
+  people.forEach(function (p) { bySort[nkey_(p['Sort name'])] = p; byName[nkey_(p.Name)] = p; });
+  var have = {}; rows_('Training').forEach(function (r) { have[nkey_(r.Person)] = r; });
+  var n = 0, unknown = [];
+  lines.forEach(function (l) {
+    var dates = (l.match(/\b(\d{1,2} \w{3} \d{4}|\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d\d-\d\d|\w{3} \d{1,2}, \d{4})\b/g) || []).map(lcrDate_).filter(Boolean);
+    var nameM = l.match(/^\s*([A-Za-z'’.\- ]+,\s*[A-Za-z'’.\- ]+)/) || l.match(/^\s*([A-Z][A-Za-z'’.\-]+(?: [A-Z][A-Za-z'’.\-]+)+)/);
+    if (!nameM || !dates.length) return;
+    var raw = nameM[1].trim(), p = bySort[nkey_(raw)] || byName[nkey_(raw)];
+    var person = p ? p.Name : (raw.indexOf(',') > 0 ? raw.split(',')[1].trim() + ' ' + raw.split(',')[0].trim() : raw);
+    if (!p) unknown.push(person);
+    dates.sort();
+    var completed = dates.length > 1 ? dates[0] : '', expires = dates[dates.length - 1];
+    if (dates.length === 1 && expires < ymd_(today_())) { completed = expires; expires = ymd_(addDays_(parseYmd_(expires), 3 * 365)); }
+    var cur = have[nkey_(person)];
+    var row = { ID: cur ? cur.ID : '', Person: person, Course: 'Protecting Children and Youth', Completed: completed || (cur && cur.Completed) || '', Expires: expires };
+    if (cur && cur.Expires !== expires) { row['Emailed 60'] = ''; row['Texted 30'] = ''; row['Texted 15'] = ''; }
+    save_(me, 'Training', row, { system: true, quiet: true }); n++;
+  });
+  log_(me.name, 'training paste', 'Training', '', n + ' people');
+  return { saved: n, unknown: unknown };
+};
+ACTIONS.trainingTexted = function (req, me) {
+  if (!me.roles.admin) throw new Error('Only the executive secretary marks reminders.');
+  var r = {}; r.ID = req.id; r[req.which === 15 || req.which === '15' ? 'Texted 15' : 'Texted 30'] = ymd_(today_());
+  save_(me, 'Training', r, { system: true }); return {};
+};
+
+/* ---------- inbox ---------- */
+ACTIONS.inbox = function (req, me) {
+  if (!me.roles.admin) throw new Error('The inbox is for the executive secretary.');
+  return { items: rows_('Inbox').filter(function (i) { return i.Status === 'New'; }).map(strip_), pendingEvents: rows_('Events').filter(function (e) { return e.Status === 'Inbox'; }).map(strip_) };
+};
+ACTIONS.inboxDecide = function (req, me) {
+  if (!me.roles.admin) throw new Error('The inbox is for the executive secretary.');
+  if (req.event) { save_(me, 'Events', { ID: req.event, Status: req.approve ? 'Approved' : 'Skipped' }, { system: true }); return {}; }
+  var it = rows_('Inbox').filter(function (i) { return i.ID === req.id; })[0]; if (!it) throw new Error('Not found');
+  if (req.approve) {
+    var data = {}; try { data = typeof it.Data === 'string' ? JSON.parse(it.Data || '{}') : it.Data || {}; } catch (e) {}
+    if (req.edited) data = req.edited;
+    (data.events || []).forEach(function (e) { save_(me, 'Events', { Date: e.date, 'End date': e.end || '', Start: e.start || '', End: e.endTime || '', Title: e.title, Organization: e.org || data.org || 'Ward', Place: e.place || '', Status: 'Approved', Source: it.From || 'Inbox' }, { system: true, quiet: true }); });
+  }
+  save_(me, 'Inbox', { ID: it.ID, Status: req.approve ? (req.edited ? 'Edited' : 'Approved') : 'Skipped', 'Decided by': me.name, 'Decided on': Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm") }, { system: true });
+  return {};
+};
+
+
+/* ================= Administrator: access and links, settings, health, nightly jobs ================= */
+function needAdmin_(me) { if (!me.roles.admin) throw new Error('Only the executive secretary and bishop can do this.'); }
+ACTIONS.access = function (req, me) {
+  needAdmin_(me);
+  var list = rows_('Access').map(function (a) { var o = strip_(a); o.hasKey = !!a.Key; delete o.Key; var rf = rolesFor_(a.Person, a.Role, a.Organizations); o.roles = Object.keys(rf.roles).filter(function (r) { return r !== 'member'; }); o.orgs = rf.orgs; return o; });
+  return { list: list.sort(function (a, b) { return String(a.Person).localeCompare(String(b.Person)); }), paused: emailPaused_() };
+};
+ACTIONS.accessSave = function (req, me) {
+  needAdmin_(me);
+  var r = req.row || {}; if (!r.Person) throw new Error('Add a name.');
+  if (!r.Email) { var p = rows_('People').filter(function (x) { return nkey_(x.Name) === nkey_(r.Person); })[0]; if (p) { r.Email = p.Email; r.Phone = r.Phone || p.Phone; } }
+  if (!r.Status) r.Status = 'Active';
+  var id = save_(me, 'Access', r, { system: true }); clearWho_();
+  return { id: id };
+};
+/* A personal link to send by text (works even while emails are paused). */
+ACTIONS.linkFor = function (req, me) {
+  needAdmin_(me);
+  var a = rows_('Access').filter(function (x) { return x.ID === req.id; })[0]; if (!a) throw new Error('Not found');
+  if (req.renew) { save_(null, 'Access', { ID: a.ID, Key: '' }, { system: true, quiet: true }); a.Key = ''; clearWho_(); }
+  ensureKey_(a);
+  save_(null, 'Access', { ID: a.ID, 'Link sent': ymd_(today_()) }, { system: true, quiet: true });
+  var link = linkFor_(a, req.app);
+  log_(me.name, 'link', 'Access', a.ID, a.Person);
+  return { link: link, person: a.Person, phone: a.Phone || ((rows_('People').filter(function (p) { return nkey_(p.Name) === nkey_(a.Person); })[0] || {}).Phone || ''), email: a.Email,
+    text: 'Hi ' + first_(a.Person) + ', here is your personal link to the ' + (setting_('ward_name') || 'ward') + ' Ward Hub. Open it on your phone, then Add to Home Screen. Please don\'t share it: ' + link };
+};
+ACTIONS.settingsList = function (req, me) {
+  needAdmin_(me);
+  return { settings: rows_('Settings').map(function (s) { var o = strip_(s); if (SECRET_SETTINGS[s.Key] && s.Value) o.Value = '••••••'; return o; }) };
+};
+ACTIONS.settingSave = function (req, me) {
+  needAdmin_(me);
+  var s = rows_('Settings').filter(function (x) { return x.Key === req.setting; })[0]; if (!s) throw new Error('Not found');
+  if (SECRET_SETTINGS[s.Key] && req.value === '••••••') return {};
+  save_(me, 'Settings', { Key: s.Key, Value: String(req.value == null ? '' : req.value).slice(0, 2000) }, { system: true });
+  SET_CACHE_ = null;
+  return {};
+};
+ACTIONS.health = function (req, me) {
+  needAdmin_(me);
+  var p = PropertiesService.getScriptProperties(), jobs = {};
+  try { jobs = JSON.parse(p.getProperty('JOBS') || '{}'); } catch (e) {}
+  var quota = null; try { quota = MailApp.getRemainingDailyQuota(); } catch (e) {}
+  var triggers = []; try { triggers = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); }); } catch (e) {}
+  var counts = {}; SCHEMA.tabs.forEach(function (t) { try { counts[t.name] = rows_(t.name).length; } catch (e) { counts[t.name] = -1; } });
+  return { version: VERSION, jobs: jobs, emailQuota: quota, paused: emailPaused_(), triggers: triggers, counts: counts, log: rows_('Log').slice(0, 25).map(strip_) };
+};
+ACTIONS.runJob = function (req, me) { needAdmin_(me); if (req.job === 'nightly') nightly(); if (req.job === 'sources') readSources_(); return ACTIONS.health(req, me); };
+
+/* ---------- nightly jobs (installed by setUp) ---------- */
+function installJobs_() {
+  var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  if (have.indexOf('nightly') < 0) ScriptApp.newTrigger('nightly').timeBased().everyDays(1).atHour(3).create();
+}
+function jobRecord_(name, fn) {
+  var p = PropertiesService.getScriptProperties(), jobs = {}; try { jobs = JSON.parse(p.getProperty('JOBS') || '{}'); } catch (e) {}
+  var t0 = Date.now(), ok = true, note = '';
+  try { note = fn() || ''; } catch (e) { ok = false; note = String(e && e.message || e).slice(0, 200); log_('Hub', 'job failed', '', name, note); }
+  jobs[name] = { when: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), ok: ok, ms: Date.now() - t0, note: String(note).slice(0, 200) };
+  p.setProperty('JOBS', JSON.stringify(jobs));
+}
+function nightly() {
+  jobRecord_('sources', readSources_);
+  jobRecord_('meetings', function () { ensureMeetings_(); return 'ok'; });
+  jobRecord_('training', trainingEmails_);
+  jobRecord_('tidy', tidy_);
+}
+/* Linked Google Calendars and iCal links → Events (auto-approved, or held in the inbox). */
+function readSources_() {
+  var from = today_(), to = addDays_(today_(), 120), done = 0;
+  rows_('Sources').filter(function (s) { return s.Link && /Calendar|iCal/.test(s.Kind) && s.Schedule !== 'Manual'; }).forEach(function (s) {
+    var got = [], result = '';
+    try {
+      if (/^https?:|^webcal:/i.test(s.Link)) got = parseIcs_(UrlFetchApp.fetch(String(s.Link).replace(/^webcal:/i, 'https:'), { muteHttpExceptions: true }).getContentText(), from, to);
+      else { var cal = CalendarApp.getCalendarById(s.Link); if (!cal) throw new Error('Calendar not found or not shared with the ward account'); got = cal.getEvents(from, to).map(function (e) { return { uid: e.getId() + '|' + ymd_(e.getStartTime()), date: ymd_(e.getStartTime()), start: e.isAllDayEvent() ? '' : Utilities.formatDate(e.getStartTime(), tz_(), 'h:mm a'), end: e.isAllDayEvent() ? '' : Utilities.formatDate(e.getEndTime(), tz_(), 'h:mm a'), title: e.getTitle(), place: e.getLocation() }; }); }
+      var have = {}; rows_('Events').forEach(function (e) { if (e['Source ID']) have[e['Source ID']] = e; });
+      var added = 0, changed = 0;
+      got.forEach(function (g) {
+        var cur = have[g.uid], row = { Date: g.date, Start: g.start, End: g.end, Title: g.title, Organization: s.Organization || 'Ward', Place: g.place || '', Source: s.Kind + ': ' + s.Organization, 'Source ID': g.uid };
+        if (!cur) { row.Status = s['Auto-approve'] === true ? 'Approved' : 'Inbox'; save_(null, 'Events', row, { system: true, quiet: true }); added++; }
+        else if (cur.Date !== g.date || cur.Title !== g.title || cur.Start !== g.start) { row.ID = cur.ID; save_(null, 'Events', row, { system: true, quiet: true }); changed++; }
+      });
+      result = got.length + ' read · ' + added + ' new · ' + changed + ' changed'; done++;
+    } catch (e) { result = 'Problem: ' + String(e.message || e).slice(0, 120); }
+    save_(null, 'Sources', { ID: s.ID, 'Last read': Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), Result: result }, { system: true, quiet: true });
+  });
+  return done + ' sources';
+}
+function parseIcs_(text, from, to) {
+  var out = [], blocks = String(text || '').replace(/\r\n[ \t]/g, '').split('BEGIN:VEVENT').slice(1);
+  var val = function (b, k) { var m = b.match(new RegExp('\\n' + k + '[^:\\n]*:([^\\n\\r]*)')); return m ? m[1].replace(/\\,/g, ',').replace(/\\n/g, ' ').trim() : ''; };
+  var dt = function (s) { var m = String(s).match(/(\d{4})(\d\d)(\d\d)(?:T(\d\d)(\d\d))?(Z)?/); if (!m) return null; var d = m[6] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0))) : new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)); return { d: d, allDay: !m[4] }; };
+  blocks.forEach(function (b) {
+    b = '\n' + b; var s = dt(val(b, 'DTSTART')), e = dt(val(b, 'DTEND')); if (!s || s.d < from || s.d > to) return;
+    out.push({ uid: val(b, 'UID') + '|' + ymd_(s.d), date: ymd_(s.d), start: s.allDay ? '' : Utilities.formatDate(s.d, tz_(), 'h:mm a'), end: e && !e.allDay ? Utilities.formatDate(e.d, tz_(), 'h:mm a') : '', title: val(b, 'SUMMARY'), place: val(b, 'LOCATION') });
+  });
+  return out;
+}
+/* Youth protection: an email 60 days before it expires (only when emails aren't paused). Kevin texts at 30 and 15 from the app. */
+function trainingEmails_() {
+  if (emailPaused_()) return 'paused';
+  var days = +setting_('ypt_email_days') || 60, t = today_(), sent = 0, link = setting_('ypt_link');
+  var ppl = {}; rows_('People').forEach(function (p) { ppl[nkey_(p.Name)] = p; });
+  rows_('Training').forEach(function (r) {
+    if (!r.Expires || r['Emailed 60']) return;
+    var left = Math.round((parseYmd_(r.Expires) - t) / 864e5), p = ppl[nkey_(r.Person)];
+    if (left > days || left < 0 || !p || !p.Email) return;
+    MailApp.sendEmail({ to: p.Email, subject: 'Youth protection training renewal', name: (setting_('ward_name') || 'Ward') + ' Ward Hub',
+      htmlBody: '<p>Hi ' + first_(r.Person) + ',</p><p>Your Protecting Children and Youth training expires on <b>' + Utilities.formatDate(parseYmd_(r.Expires), tz_(), 'MMMM d, yyyy') + '</b>. It takes about 30 minutes:</p><p><a href="' + link + '">' + link + '</a></p><p>Thank you for serving our youth.</p>' });
+    save_(null, 'Training', { ID: r.ID, 'Emailed 60': ymd_(t) }, { system: true, quiet: true }); sent++;
+  });
+  return sent + ' emails';
+}
+/* Keep the Log tab short. */
+function tidy_() {
+  var keep = (+setting_('archive_months') || 18), sh = sheet_('Log'), n = sh.getLastRow();
+  if (n > 3000) { sh.deleteRows(3001, n - 3000); bump_('Log'); return 'log trimmed'; }
+  return 'ok';
+}
 
 
 /* ================= One-time repairs (run by setUp; safe to repeat) ================= */
