@@ -552,6 +552,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Ward Hub')
     .addItem('Set up or repair tabs', 'setUp')
     .addItem('Show my admin link', 'showMyLink')
+    .addItem('Add imported sheets', 'mergeImports')
     .addToUi();
 }
 /* Builds every tab with its headings and the default settings. Safe to run again: it never deletes anything. */
@@ -1588,6 +1589,36 @@ function repairs_() {
       });
     }
   });
+}
+
+
+/* ================= Import: add rows from an uploaded workbook (File › Import › Insert new sheets) ================= */
+/* Any sheet named "Import Groups", "Import Events" … is appended to that tab by its column names, then removed. */
+function mergeImports() {
+  var done = [];
+  ss_().getSheets().forEach(function (sh) {
+    var m = sh.getName().match(/^Import[ :_-]+(.+)$/i); if (!m) return;
+    var tab = m[1].trim(), d = tabDef_(tab); if (!d || sh.getLastRow() < 2) return;
+    var vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues(), head = vals[0].map(String), n = 0;
+    var have = {}; rows_(tab).forEach(function (r) { have[String(r[d.cols[0][0]])] = 1; });
+    if (tab === 'Groups') { // lists like Cleaning are replaced as a whole, so they never double up
+      var ki = head.indexOf('Kind'), kinds = {};
+      if (ki >= 0) for (var a = 1; a < vals.length; a++) if (/^(Cleaning|Flags|Other|Dinner group)$/.test(vals[a][ki])) kinds[vals[a][ki]] = 1;
+      var gsh = sheet_('Groups'); rows_('Groups').filter(function (g) { return kinds[g.Kind]; }).sort(function (x, y) { return y._r - x._r; }).forEach(function (g) { gsh.deleteRow(g._r); });
+      bump_('Groups');
+    }
+    for (var i = 1; i < vals.length; i++) {
+      var row = {}; head.forEach(function (h, j) { if (h) row[h] = vals[i][j] instanceof Date ? ymd_(vals[i][j]) : vals[i][j]; });
+      if (d.cols[0][1] !== 'id' && row[d.cols[0][0]] && have[String(row[d.cols[0][0]])]) continue;
+      if (!Object.keys(row).some(function (k) { return row[k] !== '' && row[k] !== null; })) continue;
+      if (d.cols[0][1] === 'id') delete row[d.cols[0][0]];
+      save_(null, tab, row, { system: true, quiet: true }); n++;
+    }
+    ss_().deleteSheet(sh); done.push(tab + ': ' + n);
+  });
+  log_('Hub', 'import', '', '', done.join(', '));
+  try { SpreadsheetApp.getUi().alert(done.length ? 'Added ' + done.join(', ') : 'No sheets named "Import …" were found.'); } catch (e) {}
+  return done;
 }
 
 // ===== END OF WARD HUB ENGINE (if you can see this line, you copied everything) =====

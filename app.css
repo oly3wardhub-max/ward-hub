@@ -163,3 +163,9 @@ button.row:active,a.row:active{background:var(--card2)}
 
 @media (min-width:760px){.screen{padding-top:calc(var(--top) + 20px)}}
 @media print{.tabbar,#toast,.navbar,.noprint{display:none!important}.screen{padding:0}body{background:#fff;color:#000}}
+
+/* ---------- Today shortcuts ---------- */
+.quick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.qbtn{display:flex;align-items:center;gap:10px;border:0;background:var(--card);border-radius:14px;padding:12px;min-height:56px;font-size:16px;font-weight:600;color:var(--text);text-align:left;cursor:pointer}
+.qbtn:active{background:var(--card2)}
+@media (min-width:600px){.quick{grid-template-columns:repeat(4,1fr)}}
