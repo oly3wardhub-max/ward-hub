@@ -69,7 +69,7 @@ window.WHProgram = (function () {
   `;
   function online(p) {
     return `<div class="pg pg-online">${header(p)}${order(p)}<div class="pg-rule" style="margin-top:20px"></div>${side(p, '')}
-      ${p.building ? `<p style="margin-top:18px"><a href="${esc(p.building)}">Request the building</a></p>` : ''}</div>`;
+      ${p.zoom ? `<p style="margin-top:18px"><a href="${esc(p.zoom)}">Join on Zoom</a></p>` : ''}${p.building ? `<p style="margin-top:18px"><a href="${esc(p.building)}">Request the building</a></p>` : ''}</div>`;
   }
   function print(p, qrSvg) { return `<div class="pg pg-print"><div>${header(p)}${order(p)}</div><div>${side(p, qrSvg)}</div></div>`; }
   function qr(url) {

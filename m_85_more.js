@@ -157,7 +157,7 @@
     const { esc, kv } = WH;
     document.querySelectorAll('.fuadd').forEach(x => x.innerHTML = '');
     document.getElementById('body').innerHTML = `<div class="section-h big"><span>${esc(f.Name)}</span>${FU.canEdit ? `<button class="link" style="font-size:15px" data-act="fuEdit" data-id="${esc(f.ID)}">Edit</button>` : ''}</div>
-      <div class="btns"><button class="btn" data-act="fuPrint" data-id="${esc(f.ID)}">Print the order of service</button>${f['Family phone'] ? `<a class="btn gray" style="text-decoration:none" href="tel:${esc(String(f['Family phone']).replace(/[^0-9+]/g, ''))}">Call family</a>` : ''}</div>
+      <div class="btns"><button class="btn" data-act="fuPrint" data-id="${esc(f.ID)}">Print the order of service</button><button class="btn gray" data-act="fuConduct" data-id="${esc(f.ID)}">Conducting sheet</button></div><div class="btns">${f['Family phone'] ? `<a class="btn gray" style="text-decoration:none" href="tel:${esc(String(f['Family phone']).replace(/[^0-9+]/g, ''))}">Call family</a>` : ''}</div>
       <div class="list" style="margin-top:14px">${FCOLS.slice(1).filter(c => f[c]).map(c => kv(c, /Date/.test(c) ? WH.long(f[c]) : String(f[c]).replace(/\n/g, ' · '))).join('')}</div>
       <p class="foot">Tasks are on Today and More › Tasks. The building reservation is on Building.</p>`;
   }
@@ -186,6 +186,16 @@
       await WH.loadNames(); const f = FU.list.find(x => x.ID === el.dataset.id);
       WH.form('Edit', FCOLS.map(ffield), f, async row => { row.ID = f.ID; await WH.call('save', { tab: 'Funerals', row }); WH.routes.funerals.view([f.ID]); },
         async () => { await WH.call('remove', { tab: 'Funerals', id: f.ID }); location.hash = '#/x/funerals'; });
+    },
+    fuConduct(el) {
+      const f = FU.list.find(x => x.ID === el.dataset.id), e = s => WH.esc(s || '____'), L = (k, v) => String(v || '').split('\n').map(s => s.trim()).filter(Boolean);
+      const steps = [`Welcome. We are gathered for the funeral services of <b>${e(f.Name)}</b>. We extend our love and sympathy to the family.`, `These services are presided over by ${e(f.Presiding)}, and I am ${e(f.Conducting)}. ${f.Organist ? 'The organist is ' + e(f.Organist) + '.' : ''} ${f.Chorister ? 'Music is directed by ' + e(f.Chorister) + '.' : ''}`,
+        f['Family prayer'] ? `A family prayer was offered before the services by ${e(f['Family prayer'])}.` : '', `We will open by singing <b>${e(f['Opening hymn'])}</b>, after which ${e(f.Invocation)} will offer the invocation.`,
+        f['Life sketch'] ? `${e(f['Life sketch'])} will share a life sketch.` : '', ...L('', f.Speakers).map(s => `We will now hear from ${e(s)}.`), ...L('', f['Musical numbers']).map(s => `We will now enjoy a musical number: ${e(s)}.`),
+        `We will close by singing <b>${e(f['Closing hymn'])}</b>, after which ${e(f.Benediction)} will offer the benediction.`, `Following the services${f.Burial ? ', interment will be at ' + e(f.Burial) : ''}${f['Dedication of the grave'] ? '; ' + e(f['Dedication of the grave']) + ' will dedicate the grave' : ''}.${f.Luncheon ? ' A luncheon for the family will follow: ' + e(f.Luncheon) + '.' : ''} We thank all who have helped.`].filter(Boolean);
+      let root = document.getElementById('print-root'); if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
+      root.innerHTML = `<style>@media screen{#print-root{display:none}}@media print{@page{size:letter;margin:.7in}body.printing-program>*:not(#print-root){display:none!important}body.printing-program #print-root{display:block;color:#000}}</style><div style="font:13pt/1.5 Georgia,serif"><div style="font-size:18pt;margin-bottom:4px">Conducting · Funeral of ${e(f.Name)}</div><div style="color:#555;margin-bottom:16px">${WH.esc(WH.long(f.Date))}${f.Time ? ' · ' + WH.esc(f.Time) : ''}</div><ol style="padding-left:20px">${steps.map(s => `<li style="margin:0 0 12px">${s}</li>`).join('')}</ol></div>`;
+      document.body.classList.add('printing-program'); setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('printing-program'), 1000); }, 60);
     },
     fuPrint(el) {
       const f = FU.list.find(x => x.ID === el.dataset.id);
