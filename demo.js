@@ -64,6 +64,15 @@ window.WardHubDemo = (function () {
     const nav = [-1, 0, 1, 2, 3, 4].map(i => ({ date: S(i), type: (db.Sundays.find(x => x.Date === S(i)) || {}).Type || 'Regular', speakers: db.Participants.filter(p => p.Date === S(i) && /speaker/i.test(p.Role)).length }));
     return { date: d, sunday: s, participants: parts, hymns: hy, announcements: db.Announcements.filter(a => a.Status === 'Approved').map(a => ({ id: a.ID, org: a.Organization, text: a.Text, onProgram: a['On program'] })), nav };
   }
+  function demoProgram(d) {
+    const sv = sunday(d), s = sv.sunday || { Type: 'Regular' }, P = r => sv.participants.filter(p => p.Role === r).map(p => p.Person).join(', ');
+    const lab = { Speaker: 'Speaker', 'Youth speaker': 'Youth Speaker', 'High council': 'High Council Speaker', 'Musical number': 'Musical Number' };
+    return { ward: 'Sample Ward', date: d, type: s.Type, presiding: s.Presiding || 'Bishop Price', conducting: s.Conducting, organist: s.Organist, chorister: s.Chorister,
+      opening: sv.hymns['Opening hymn'] || null, sacrament: sv.hymns['Sacrament hymn'] || null, closing: sv.hymns['Closing hymn'] || null, invocation: P('Invocation'), benediction: P('Benediction'),
+      items: sv.participants.filter(p => !/Invocation|Benediction/.test(p.Role)).map(p => ({ role: lab[p.Role] || p.Role, name: p.Person, musical: p.Role === 'Musical number' })), fast: s.Type === 'Fast & Testimony',
+      theme: s['Theme text'] ? { text: s['Theme text'], source: s.Theme } : null, announcements: db.Announcements.filter(a => a.Status === 'Approved' && a['On program']).map(a => ({ org: a.Organization, text: a.Text })),
+      birthdays: ['Ava Martin', 'Ben Carter'], missionaries: [{ name: 'Elder Sam Reyes', mission: 'Peru Lima North' }], picture: null, footer: 'Questions? Ask the executive secretary.' };
+  }
   const api = {
     hello: () => ({ ward: 'Sample Ward', ready: true }),
     boot: () => ({ me: { name: 'Ava Martin', roles: { admin: 1, bishopric: 1, member: 1 }, orgs: [], callings: ['Ward Executive Secretary'] }, settings: { ward_name: 'Sample Ward', stake_name: 'Sample Stake', presiding_default: 'Bishop Price', meeting_time: '9:00 AM' }, tabs, today: ymd(today), demo: true }),
@@ -89,7 +98,10 @@ window.WardHubDemo = (function () {
     },
     remove: r => { const t = db[r.tab] || []; const i = t.findIndex(x => x.ID === r.id); if (i >= 0) t.splice(i, 1); return { removed: i >= 0 }; },
     check: r => { if (r.done) done[r.item] = 'You · just now'; else delete done[r.item]; return { done }; },
-    link: () => ({ sent: true })
+    link: () => ({ sent: true }),
+    programPreview: r => ({ program: demoProgram(r.date || S(0)) }),
+    publish: r => { const p = demoProgram(r.date || S(0)); p.published = new Date().toISOString().slice(0, 16); const s = db.Sundays.find(x => x.Date === (r.date || S(0))); if (s) s.Published = p.published; return { program: p }; },
+    program: () => ({ program: demoProgram(S(0)) })
   };
   return { call: req => new Promise(res => setTimeout(() => res(Object.assign({ ok: true }, api[req.action] ? api[req.action](req) : { ok: false, error: 'Not in the demo yet' })), 120)) };
 })();

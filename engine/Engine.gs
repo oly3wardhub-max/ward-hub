@@ -557,4 +557,77 @@ function showMyLink() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Your Ward Hub link');
 }
 
+
+/* ================= Program: online (public) and printed ================= */
+PUBLIC_ACTIONS.program = 1;
+
+/* Public: the last published program (what the QR code opens). Never shows anything unpublished. */
+ACTIONS.program = function (req) {
+  var p = PropertiesService.getScriptProperties(), key = req.date ? 'pub:' + req.date : 'pub:latest';
+  var raw = p.getProperty(key);
+  if (!raw && !req.date) return { program: null, message: 'The program for this Sunday has not been published yet.' };
+  if (!raw) return { program: null, message: 'No program was published for that Sunday.' };
+  return { program: JSON.parse(raw) };
+};
+/* Bishopric: see the program before publishing. */
+ACTIONS.programPreview = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.music || me.roles.clerk)) throw new Error('Only the bishopric can preview the program.');
+  return { program: buildProgram_(req.date || ymd_(nextSunday_())) };
+};
+/* Bishopric: publish. The online program updates at once; the date is saved on the Sunday. */
+ACTIONS.publish = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Only the bishopric publishes the program.');
+  var d = req.date || ymd_(nextSunday_()), prog = buildProgram_(d);
+  prog.published = Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm");
+  var json = JSON.stringify(prog), p = PropertiesService.getScriptProperties();
+  if (json.length > 8800) { prog.birthdays = prog.birthdays.slice(0, 12); prog.announcements = prog.announcements.slice(0, 8); json = JSON.stringify(prog); }
+  p.setProperty('pub:' + d, json);
+  var latest = p.getProperty('pub:latest'), ld = latest ? JSON.parse(latest).date : '';
+  if (!ld || d >= ld || ld < ymd_(today_())) p.setProperty('pub:latest', json);
+  save_(me, 'Sundays', { Date: d, Published: prog.published }, { system: true });
+  return { program: prog };
+};
+
+function buildProgram_(d) {
+  var set = settings_(), S = rows_('Sundays').filter(function (s) { return s.Date === d; })[0] || { Date: d, Type: 'Regular' };
+  var parts = rows_('Participants').filter(function (p) { return p.Date === d && p.Status !== 'Declined' && p.Status !== 'Idea'; })
+    .sort(function (a, b) { return (+a.Order || 0) - (+b.Order || 0); });
+  var hymnT = {}; rows_('Hymns').forEach(function (h) { hymnT[String(h.Number)] = h.Title; });
+  var hy = function (k) { return S[k] ? { n: String(S[k]), title: hymnT[String(S[k])] || '' } : null; };
+  var who = function (role) { return parts.filter(function (p) { return p.Role === role; }).map(function (p) { return p.Person; }).join(', '); };
+  var label = { 'Speaker': 'Speaker', 'Youth speaker': 'Youth Speaker', 'High council': 'High Council Speaker', 'Musical number': 'Musical Number', 'Testimony': 'Testimony' };
+  var items = parts.filter(function (p) { return !/Invocation|Benediction/.test(p.Role); }).map(function (p) { return { role: label[p.Role] || p.Role, name: p.Person, musical: p.Role === 'Musical number' }; });
+  var dd = parseYmd_(d), wkStart = addDays_(dd, 0), wkEnd = addDays_(dd, 6);
+  var birthdays = [];
+  if (!/^no$/i.test(set.show_birthdays || 'Yes')) rows_('People').forEach(function (p) {
+    if (!p['Birth date'] || p['No birthday on program'] === true || p.Source === 'Moved out') return;
+    var b = parseYmd_(p['Birth date']);
+    for (var i = 0; i < 7; i++) { var x = addDays_(wkStart, i); if (x.getMonth() === b.getMonth() && x.getDate() === b.getDate()) { birthdays.push(p.Name); break; } }
+  });
+  var ann = rows_('Announcements').filter(function (a) {
+    if (a.Status !== 'Approved' || a['On program'] !== true) return false;
+    if (a['Event date'] && a['Event date'] < d) return false;
+    if (a.From || a.Through) return (!a.From || a.From <= d) && (!a.Through || a.Through >= d);
+    return !!a['Event date'] && a['Event date'] <= ymd_(addDays_(dd, 21));
+  }).map(function (a) { return { org: a.Organization, text: a.Text }; });
+  var pic = null;
+  if (!/^no$/i.test(set.show_picture || 'Yes')) {
+    var imgs = rows_('Library').filter(function (l) { return l.Kind === 'Image' && l.Link; });
+    pic = imgs.filter(function (l) { return S.Picture && l.Title === S.Picture; })[0] || imgs[Math.abs(hash_(d)) % Math.max(1, imgs.length)] || null;
+    if (pic) pic = { src: pic.Link, title: pic.Title, page: pic.Source };
+  }
+  var miss = rows_('Missionaries').filter(function (m) { return m['On program'] === true; }).map(function (m) { return { name: (m.Title ? m.Title + ' ' : '') + m.Name, mission: m.Mission }; });
+  var noMeeting = /General Conference|Stake Conference|No meeting/.test(S.Type);
+  return {
+    ward: set.ward_name || '', stake: set.stake_name || '', date: d, type: S.Type || 'Regular', time: set.meeting_time || '', noMeeting: noMeeting,
+    presiding: S['Stake visitor'] || S.Presiding || set.presiding_default || '', conducting: S.Conducting || '', organist: S.Organist || '', chorister: S.Chorister || '',
+    opening: hy('Opening hymn'), sacrament: hy('Sacrament hymn'), intermediate: hy('Intermediate hymn'), closing: hy('Closing hymn'),
+    invocation: who('Invocation'), benediction: who('Benediction'), items: items, fast: S.Type === 'Fast & Testimony',
+    business: true, theme: /^no$/i.test(set.show_quote || 'Yes') ? null : (S['Theme text'] || S.Theme ? { text: S['Theme text'] || '', source: S.Theme || '' } : null),
+    announcements: ann, birthdays: birthdays, missionaries: miss, picture: pic, footer: set.program_footer || '',
+    building: set.app_url ? String(set.app_url).replace(/[#?].*$/, '') + 'building.html' : ''
+  };
+}
+function hash_(s) { var h = 0; s = String(s); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+
 // ===== END OF WARD HUB ENGINE (if you can see this line, you copied everything) =====

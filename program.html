@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sacrament Meeting Program</title><meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root{color-scheme:light dark}body{margin:0;background:#F2F2F7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+@media (prefers-color-scheme:dark){body{background:#000}.card{background:#1C1C1E!important}}
+.wrap{max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 18px) 14px 40px}
+.card{background:#fff;border-radius:16px;padding:22px 20px 26px}
+.msg{text-align:center;color:#8e8e93;padding:60px 20px;font-size:17px}
+.upd{text-align:center;color:#8e8e93;font-size:12px;margin-top:12px}
+.spin{width:22px;height:22px;border:2px solid #ccc;border-top-color:#888;border-radius:50%;animation:s .8s linear infinite;margin:0 auto}@keyframes s{to{transform:rotate(360deg)}}
+</style></head>
+<body><div class="wrap"><div class="card" id="p"><div class="msg"><div class="spin"></div></div></div><div class="upd" id="u"></div></div>
+<script src="config.js?v=2.1.0"></script><script src="progview.js?v=2.1.0"></script>
+<script>
+(async function(){
+  WHProgram.addCss();
+  const el=document.getElementById('p'), u=document.getElementById('u');
+  const q=new URLSearchParams(location.search), date=q.get('date')||'';
+  const show=(pr)=>{ if(!pr){return;} el.innerHTML=WHProgram.online(pr); document.title=(pr.ward?pr.ward+' · ':'')+'Program'; u.textContent=pr.published?'Updated '+new Date(pr.published).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}):''; };
+  let old=null; try{old=JSON.parse(localStorage.getItem('wh:prog:'+date)||'null');}catch(e){}
+  if(old) show(old);
+  const api=(window.WARD_HUB_CONFIG||{}).api;
+  if(!api){ if(!old) el.innerHTML='<div class="msg">This program page isn\'t connected yet.</div>'; return; }
+  try{
+    const r=await fetch(api,{method:'POST',body:JSON.stringify({action:'program',date})}); const j=await r.json();
+    if(j.program){ show(j.program); try{localStorage.setItem('wh:prog:'+date,JSON.stringify(j.program));}catch(e){} }
+    else if(!old) el.innerHTML='<div class="msg">'+(j.message||j.error||'The program isn\'t ready yet.')+'</div>';
+  }catch(e){ if(!old) el.innerHTML='<div class="msg">Couldn\'t load the program. Check your connection and try again.</div>'; }
+})();
+</script></body></html>

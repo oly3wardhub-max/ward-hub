@@ -1,7 +1,9 @@
 /* Ward Hub v2 app. Plain JavaScript, no build step, so any ward can copy it. */
 (function () {
   'use strict';
-  const VERSION = '2.0.0';
+  const WH = window.WH = window.WH || {};
+  WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
+  const VERSION = '2.1.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -39,6 +41,7 @@
       res = await r.json();
     }
     if (!res.ok && res.error === 'signin') { signOut(res.message); throw new Error(res.message); }
+    if (!res.ok && res.error === 'Unknown action') throw new Error('This needs the latest engine. In the spreadsheet: Extensions › Apps Script › paste the new Engine.gs › Deploy › Manage deployments › ✏️ › New version.');
     if (!res.ok) throw new Error(res.error || 'Something went wrong');
     return res;
   }
@@ -135,9 +138,13 @@
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     const tab = parts[0] || 'today';
     const can = tabsFor();
-    const t = can[tab] ? tab : 'today';
+    const t = tab === 'x' ? 'x' : (can[tab] ? tab : 'today');
     drawTabs(t);
     window.scrollTo(0, 0);
+    if (tab === 'x' && WH.routes[parts[1]]) { drawTabs(WH.routes[parts[1]].tab || 'more'); return WH.routes[parts[1]].view(parts.slice(2)); }
+    if (tab === 'sunday' && parts[2] && parts[2] !== 'conduct' && WH.routes[parts[2]]) return WH.routes[parts[2]].view([parts[1]]);
+    const custom = WH.tabViews[t];
+    if (custom) return custom(parts.slice(1));
     ({ today: viewToday, sunday: () => parts[2] === 'conduct' ? viewConduct(parts[1]) : viewSunday(parts[1]), calendar: viewCalendar, people: viewPeople, more: viewMore })[t]();
   }
   async function start() {
@@ -150,7 +157,7 @@
     const go = e.target.closest('[data-go]');
     if (go) { e.preventDefault(); const h = go.getAttribute('data-go'); if (location.hash === h) route(); else location.hash = h; return; }
     const a = e.target.closest('[data-act]');
-    if (a && ACT[a.dataset.act]) { e.preventDefault(); ACT[a.dataset.act](a); }
+    if (a && (ACT[a.dataset.act] || WH.act[a.dataset.act])) { e.preventDefault(); (ACT[a.dataset.act] || WH.act[a.dataset.act])(a); }
   });
 
   /* ---------- Welcome ---------- */
@@ -237,6 +244,7 @@
       h += `<div class="section-h"><span>Announcements</span><span>${d.announcements.length}</span></div>`;
       h += d.announcements.length ? '<div class="list">' + d.announcements.map(a => `<div class="row wrap"><span class="dot" style="background:${ORGCOLOR[a.org] || '#8E8E93'}"></span><div class="main"><div class="t" style="font-size:15px">${esc(a.text)}</div><div class="s">${esc(a.org)}${a.onProgram ? ' · on program' : ''}</div></div></div>`).join('') + '</div>' : '<div class="list"><div class="empty">No announcements this week.</div></div>';
       h += `<div class="btns"><button class="btn" data-go="#/sunday/${date}/conduct">Conduct from this phone</button></div>`;
+      h += WH.sundayExtras.filter(x => !x.show || x.show()).map(x => `<div class="btns" style="margin-top:10px"><button class="btn gray" data-go="${x.href(date)}">${esc(x.title)}</button></div>`).join('');
       $('#body').innerHTML = h;
     });
   }
@@ -342,9 +350,11 @@
   /* ---------- More ---------- */
   function viewMore() {
     const me = S.boot.me, set = S.boot.settings || {};
-    const soon = [['Messages', 'Text youth, parents, Relief Society, elders quorum zones', 'Nov 23–Dec 6'], ['Meetings', 'Agendas and minutes', 'Dec 7–20'], ['Appointments', 'Interviews and booking links', 'Dec 7–20'], ['Building', 'Requests and family limits', 'Dec 7–20'], ['Youth protection', 'Training reminders', 'Dec 7–20'], ['Inbox and sources', 'Scans and linked calendars', 'Nov 23–Dec 6']];
+    const items = WH.more.filter(m => !m.show || m.show()).sort((a, b) => (a.order || 50) - (b.order || 50));
+    const groups = {}; items.forEach(m => (groups[m.group || 'Ward'] = groups[m.group || 'Ward'] || []).push(m));
+    const groupHtml = Object.keys(groups).map(g => `<div class="section-h"><span>${esc(g === 'Ward' ? (set.ward_name || 'Ward') : g)}</span></div><div class="list">${groups[g].map(m => `<button class="row ic" data-go="${m.href}"><span class="icon" style="background:${m.color || 'var(--accent)'}">${m.icon || ''}</span><div class="main"><div class="t">${esc(m.title)}</div>${m.sub ? `<div class="s">${esc(m.sub)}</div>` : ''}</div>${m.badge ? `<span class="chip blue">${esc(m.badge())}</span>` : ''}${I.chev}</button>`).join('')}</div>`).join('');
     screen('More', '', `<div class="list"><div class="row"><span class="icon" style="background:var(--accent);border-radius:50%;width:44px;height:44px;font-weight:700">${esc(String(me.name).split(' ').map(x => x[0]).slice(0, 2).join(''))}</span><div class="main"><div class="t" style="font-weight:600">${esc(me.name)}</div><div class="s">${esc((me.callings || []).slice(0, 2).join(' · ') || 'Member')}</div></div></div></div>
-      <div class="section-h"><span>${esc(set.ward_name || 'Ward')}</span></div><div class="list">${soon.map(s => `<div class="row"><div class="main"><div class="t">${esc(s[0])}</div><div class="s">${esc(s[1])}</div></div><span class="chip">${esc(s[2])}</span></div>`).join('')}</div>
+      ${groupHtml}
       <div class="section-h"><span>This phone</span></div><div class="list">
       <button class="row" data-act="install"><div class="main"><div class="t">Add to Home Screen</div><div class="s">Opens like an app, full screen</div></div>${I.chev}</button>
       <button class="row" data-act="refresh"><div class="main"><div class="t">Refresh everything</div></div>${I.chev}</button>
@@ -435,6 +445,11 @@
       async row => { row.Date = date; if (existing) row.ID = p.ID; if (row.Status === 'Asked' && !p['Asked on']) row['Asked on'] = ymd(today()); await call('save', { tab: 'Participants', row }); store.del('c:sunday:' + date); store.del('c:today'); viewSunday(date); },
       existing ? async () => { await call('remove', { tab: 'Participants', id: p.ID }); store.del('c:sunday:' + date); viewSunday(date); } : null);
   }
+
+  /* ---------- shared with the feature files (program.js, messages.js, …) ---------- */
+  Object.assign(WH, { S, store, call, cached, screen, form, openSheet, closeSheet, toast, esc, kv, skeleton, errorBox, pd, ymd, today, fmt, long, rel, nextSun, I, ORGCOLOR, statusChip, statusDot, loadNames, DATALISTS, route, hymnBlocks, weekList,
+    can: r => !!((S.boot && S.boot.me.roles) || {})[r], isBish: () => { const r = (S.boot && S.boot.me.roles) || {}; return !!(r.admin || r.bishopric); }, sunCache: () => sunCache });
+  WH.ready.forEach(f => { try { f(); } catch (e) { console.error(e); } });
 
   /* ---------- go ---------- */
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
