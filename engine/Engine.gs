@@ -64,6 +64,7 @@ var SCHEMA = {"tabs":[
   ["email_pause", "Housekeeping", "Pause all emails (Yes/No)", "Yes", "While Yes, the Hub sends nothing except sign-in links to admins"],
   ["email_daily_cap", "Housekeeping", "Emails per day (Google limit 100)", "90", ""],
   ["gemini_key", "Engine", "Gemini key (free tier) for reading photos and Docs", "", "Kept private"],
+  ["gemini_model", "Engine", "Gemini model", "gemini-2.5-flash", "Change only if Google retires this one"],
   ["app_url", "Engine", "App address", "", ""],
   ["api_url", "Engine", "Engine address (Deploy \u203a Web app URL)", "", "Filled in after the first deployment"],
   ["public_calendar", "Engine", "Show the public calendar", "Yes", ""]
@@ -1442,6 +1443,63 @@ function tidy_() {
   if (n > 3000) { sh.deleteRows(3001, n - 3000); bump_('Log'); return 'log trimmed'; }
   return 'ok';
 }
+
+
+/* ================= Extras: speaker and prayer ideas, scanning a calendar with Gemini ================= */
+ACTIONS.ideas = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Ideas are for the bishopric.');
+  var kind = req.kind === 'pray' ? 'pray' : 'speak', t = today_(), due = +setting_('due_months') || 24, skip = +setting_('skip_days') || 60;
+  var last = {}, lastP = {}, upcoming = {}, asked = {};
+  rows_('Participants').forEach(function (p) {
+    var k = nkey_(p.Person); if (!k) return;
+    if (p.Date >= ymd_(t) && p.Status !== 'Declined') upcoming[k] = p.Date;
+    if (p['Asked on'] && p['Asked on'] >= ymd_(addDays_(t, -skip))) asked[k] = p['Asked on'];
+    if (p.Status === 'Declined' && p['Answered on'] && p['Answered on'] >= ymd_(addDays_(t, -skip))) asked[k] = p['Answered on'];
+    if (p.Date > ymd_(t) || p.Status === 'Declined') return;
+    if (/speaker|high council/i.test(p.Role)) { if (!last[k] || p.Date > last[k]) last[k] = p.Date; }
+    if (/Invocation|Benediction/.test(p.Role)) { if (!lastP[k] || p.Date > lastP[k]) lastP[k] = p.Date; }
+  });
+  var cutoff = ymd_(addDays_(t, -Math.round(due * 30.4))), newCut = ymd_(addDays_(t, -365));
+  var list = rows_('People').filter(function (p) {
+    var a = age_(p['Birth date']), k = nkey_(p.Name);
+    if (p.Source === 'Moved out' || p["Don't ask to speak"] === true || a === null || a < 12 || upcoming[k] || asked[k]) return false;
+    if (p.Attends === 'No') return false;
+    var l = kind === 'speak' ? last[k] : lastP[k];
+    return !l || l < cutoff;
+  }).map(function (p) {
+    var k = nkey_(p.Name), a = age_(p['Birth date']);
+    return { name: p.Name, age: a < 18 ? 'Youth' : 'Adult', spoke: last[k] || '', prayed: lastP[k] || '', isNew: !!(p['Moved in'] && p['Moved in'] >= newCut), attends: p.Attends, spouse: p.Spouse || '' };
+  });
+  list.sort(function (a, b) {
+    if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+    if (a.attends !== b.attends) return a.attends === 'Yes' ? -1 : 1;
+    var x = kind === 'speak' ? a.spoke : a.prayed, y = kind === 'speak' ? b.spoke : b.prayed;
+    return String(x || '0000').localeCompare(String(y || '0000'));
+  });
+  return { kind: kind, ideas: list.slice(0, 60) };
+};
+
+/* Scan a printed or photographed calendar: Gemini reads the dates, and they wait in the inbox for approval. */
+ACTIONS.scan = function (req, me) {
+  if (!(me.roles.admin || isBishopric_(me) || me.roles.leader)) throw new Error('Only leaders can scan calendars.');
+  var key = setting_('gemini_key'); if (!key) throw new Error('Scanning needs a free Gemini key: Settings › Engine › Gemini key. (Get one at aistudio.google.com.)');
+  var org = String(req.org || 'Ward'), mime = String(req.mime || 'image/jpeg'), data = String(req.data || '');
+  if (!data || data.length > 14e6) throw new Error('That file is too large. Try a smaller photo.');
+  var prompt = 'Today is ' + ymd_(today_()) + '. This is a calendar or schedule for the "' + org + '" organization of a church congregation. List every dated event you can read. ' +
+    'Answer only with JSON: {"summary":"one short sentence","events":[{"date":"YYYY-MM-DD","end":"YYYY-MM-DD or empty","start":"7:00 PM or empty","endTime":"","title":"","place":""}]}. ' +
+    'Use the most likely year for each date (dates usually fall within the next 12 months). Do not include names of children or phone numbers.';
+  var model = setting_('gemini_model') || 'gemini-2.5-flash';
+  var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mime, data: data } }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } })
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Gemini couldn\'t read it (' + res.getResponseCode() + '). Try a clearer photo.');
+  var body = JSON.parse(res.getContentText()), text = (((body.candidates || [])[0] || {}).content || { parts: [{}] }).parts.map(function (p) { return p.text || ''; }).join('');
+  var out = {}; try { out = JSON.parse(text.replace(/^```(json)?|```$/g, '')); } catch (e) { throw new Error('Gemini\'s answer couldn\'t be read. Try again.'); }
+  var events = (out.events || []).filter(function (e) { return /^\d{4}-\d\d-\d\d$/.test(e.date || '') && e.title; }).slice(0, 80);
+  var id = save_(me, 'Inbox', { Received: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), From: me.name + ' · ' + org, Kind: 'Calendar scan', Summary: (out.summary || 'Calendar') + ' · ' + events.length + ' dates', Data: JSON.stringify({ org: org, events: events }), Status: 'New' }, { system: true });
+  return { id: id, events: events, summary: out.summary || '' };
+};
 
 
 /* ================= One-time repairs (run by setUp; safe to repeat) ================= */

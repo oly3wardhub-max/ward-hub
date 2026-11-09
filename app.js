@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.5.0';
+  const VERSION = '2.6.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -448,7 +448,7 @@
   }
 
   /* ---------- shared with the feature files (program.js, messages.js, …) ---------- */
-  Object.assign(WH, { legacyCalendar: viewCalendar, S, store, call, cached, screen, form, openSheet, closeSheet, toast, esc, kv, skeleton, errorBox, pd, ymd, today, fmt, long, rel, nextSun, I, ORGCOLOR, statusChip, statusDot, loadNames, DATALISTS, route, hymnBlocks, weekList,
+  Object.assign(WH, { partForm, legacyCalendar: viewCalendar, S, store, call, cached, screen, form, openSheet, closeSheet, toast, esc, kv, skeleton, errorBox, pd, ymd, today, fmt, long, rel, nextSun, I, ORGCOLOR, statusChip, statusDot, loadNames, DATALISTS, route, hymnBlocks, weekList,
     can: r => !!((S.boot && S.boot.me.roles) || {})[r], isBish: () => { const r = (S.boot && S.boot.me.roles) || {}; return !!(r.admin || r.bishopric); }, sunCache: () => sunCache });
   WH.ready.forEach(f => { try { f(); } catch (e) { console.error(e); } });
 
