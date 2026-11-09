@@ -28,7 +28,7 @@
           <div class="list"><div class="row"><div class="main"><div class="t">Online program</div><div class="s" id="pubstate">${esc(pub)}</div></div>
           <button class="btn small" data-act="progPublish" data-date="${date}">${WH.isBish() ? 'Publish' : ''}</button></div></div>
           <div class="btns"><button class="btn gray" data-act="progPrint">Print</button><button class="btn gray" data-act="progShare">Share link</button></div>
-          <p class="foot">Publishing updates the page the QR code opens. If no one publishes, the Hub publishes it at 3 AM Sunday.</p>
+          <p class="foot">Publishing updates the page the QR code opens. 15 minutes before the meeting, the Hub publishes the latest version if anything changed.</p>
           <div class="section-h"><span>QR codes</span></div>
           <div class="list"><button class="row" data-act="qrShow" data-url="${esc(onlineUrl())}" data-name="Program"><span style="width:52px;height:52px;flex:none">${WHProgram.qr(onlineUrl())}</span><div class="main"><div class="t">Program</div><div class="s">Show full screen, save or print</div></div>${WH.I.chev}</button>
           ${zoom ? `<button class="row" data-act="qrShow" data-url="${esc(zoom)}" data-name="Zoom"><span style="width:52px;height:52px;flex:none">${WHProgram.qr(zoom)}</span><div class="main"><div class="t">Zoom</div><div class="s">For members joining from home</div></div>${WH.I.chev}</button>` : `<div class="row"><div class="main"><div class="t" style="color:var(--sub)">Zoom</div><div class="s">Add the link in Settings › Program to get its QR code</div></div></div>`}</div>

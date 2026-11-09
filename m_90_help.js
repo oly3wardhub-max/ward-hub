@@ -33,10 +33,14 @@
     clerk: ['For LCR', 'People › Callings › For LCR lists each calling and release to record. Tap Recorded when it\'s in LCR.'],
     zones: ['Elders quorum zones', 'More › Elders quorum zones: change zone members and leaders. Add a turn (chairs, snow) and it rotates through the zones by itself, with a button to text this week\'s zone.'],
     teacher: ['Teaching', 'Today shows the lesson you teach next with its link. Messages lets you text your class (and their parents).'],
+    meetings: ['Meetings and notes', 'More › Meetings. Tap New for a presidency meeting, youth council, or missionary or temple and family history coordination. In a meeting, tap Record: the Hub writes it down, keeps only what matters, adds notes and decisions to the agenda, turns assignments into tasks, and carries open items to the next meeting. Or paste your notes instead.'],
+    ypt: ['Youth protection', 'More › Youth protection lists your presidency, advisers and teachers, with when each person\'s training expires. Tap Text to send a reminder with the training link. Today tells you when someone is due.'],
+    emergency: ['Emergency plan', 'More › Emergency plan (or Today › Emergency) shows what you do first, by calling, and works without a connection once opened. In an emergency the bishopric taps Start; elders quorum and Relief Society leaders then mark every household Safe, Needs help, Urgent or Can\'t reach.'],
+    emspec: ['Keeping the emergency plan', 'More › Emergency plan: tap any step to change it, or Add a step (by calling and stage, or a hazard card). Edit Where and who for gathering places and the stake contact. Practice drill runs a test check-in; use it each April during the Great Utah ShakeOut.'],
     connect: ['Getting your calendar and lists in', 'More › Calendar and lists. Pick the way your organization already works: just use the app (Calendar › Add), link the Google Calendar, Sheet or Doc you already keep (share it with the ward account first, then it updates itself every night), paste a list copied from a spreadsheet, or scan a printed page. Kevin checks what comes in from links.'],
     setupmtg: ['Setup meetings', 'Meet each president for 15 minutes with More › Calendar and lists open on their phone: send their link, ask how they keep their calendar, lessons and phone list, and link, paste or scan each one together. Then check the inbox each week, and turn on Auto-approve for sources you trust.'],
     newsletter: ['Newsletter', 'More › Newsletter › New. Write the items (a blank line between each), turn on the calendar, then "Send from my email": copy the newsletter, copy the addresses into Bcc, and send.'],
-    permits: ['Permission forms', 'For a trip or overnight activity, turn on "Youth need permission forms" on the calendar item (or More › Permission forms › Add). Text the parents the form link, and tap each name as forms come in.'],
+    permits: ['Permission forms', 'For a trip or overnight activity, turn on "Youth need permission forms" on the calendar item (or More › Permission forms › Add). Tap Text each family: parents get a personal link to fill in and sign the form on their phone, and it shows as signed here with a PDF. Paper forms still work: tap the name when one comes in.'],
     funerals: ['Funerals', 'More › Funerals › New puts it on the calendar, reserves the building and hands out the usual tasks. Fill in the program as the family decides, then Print the order of service.'],
     ask: ['Ask the Hub', 'More › Ask the Hub answers quick questions ("When is the youth temple trip?") from the calendar and plans. It sends no phone numbers or private notes.'],
     privacy: ['Privacy', 'You only see your own organization. Bishopric notes, interview purposes and who booked appointments stay with the bishop and executive secretary. Please don\'t share your link.']
@@ -45,13 +49,14 @@
     view() {
       const r = (WH.S.boot && WH.S.boot.me.roles) || {}, { esc } = WH;
       let keys = ['install', 'today'];
-      if (r.admin) keys = keys.concat(['kevin', 'sunday', 'program', 'conduct', 'callings', 'links', 'lcr', 'msgs', 'youth', 'funerals', 'ask', 'setupmtg', 'connect']);
-      else if (r.bishopric) keys = keys.concat(['sunday', 'program', 'conduct', 'callings', 'msgs', 'youth', 'funerals', 'ask']);
+      if (r.admin) keys = keys.concat(['kevin', 'sunday', 'program', 'conduct', 'callings', 'links', 'lcr', 'msgs', 'youth', 'funerals', 'ask', 'setupmtg', 'connect', 'meetings', 'emergency', 'ypt']);
+      else if (r.bishopric) keys = keys.concat(['sunday', 'program', 'conduct', 'callings', 'msgs', 'youth', 'funerals', 'ask', 'meetings', 'emergency']);
       else if (r.clerk) keys = keys.concat(['clerk', 'lcr']);
-      if (r.leader && !r.bishopric) keys = keys.concat(['connect', 'msgs', 'youth', 'lessons', 'classes', 'cal', 'ann']);
+      if (r.leader && !r.bishopric) keys = keys.concat(['connect', 'msgs', 'youth', 'lessons', 'classes', 'cal', 'ann', 'meetings', 'emergency']);
       if ((WH.S.boot.me.orgs || []).indexOf('Elders Quorum') >= 0) keys.push('zones');
       if (['Relief Society', 'Elders Quorum'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('newsletter');
-      if (['Young Women', 'Young Men', 'Primary'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('permits');
+      if (['Young Women', 'Young Men', 'Primary'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('permits', 'ypt');
+      if ((WH.S.boot.me.callings || []).some(c => /emergency/i.test(c))) keys.push('emspec');
       if (r.leader && !r.bishopric) keys.push('ask');
       if (r.teacher && !r.leader) keys = keys.concat(['teacher']);
       if (r.music && !r.bishopric) keys.push('program');
