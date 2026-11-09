@@ -66,6 +66,8 @@
         if (c.later.length) h += `<details class="foot" style="margin:8px 4px 0"><summary>Later: ${c.later.length} (${esc(c.later[0].period)})</summary>${c.later.map(m => esc(m.person)).join(', ')}</details>`;
       });
     }
+    if (d.lead && (d.unassigned || []).length) h += `<div class="section-h"><span>Not in a class yet</span><span class="chip orange">${d.unassigned.length}</span></div><div class="list">${d.unassigned.map(u => `<button class="row" data-act="clsNew" data-p="${esc(u.person)}"><div class="main"><div class="t">${esc(u.person)}</div><div class="s">Turns ${u.turns} this year · tap to add to a class</div></div>${I.chev}</button>`).join('')}</div>`;
+    if (d.lead && (d.coming || []).length) h += `<div class="section-h"><span>Moving up in January ${d.nextYear}</span><span class="chip blue">${d.coming.length}</span></div><div class="list">${d.coming.map(u => `<button class="row" data-act="clsNew" data-p="${esc(u.person)}" data-jan="1"><div class="main"><div class="t">${esc(u.person)}</div><div class="s">Turns ${u.turns} · tap to place them from January</div></div>${I.chev}</button>`).join('')}</div><p class="foot">They stay in Primary until January; the class you pick starts then.</p>`;
     const groups = {}; d.callings.forEach(c => (groups[c.group || ''] = groups[c.group || ''] || []).push(c));
     h += `<div class="section-h big"><span>Callings</span><span class="chip">${d.callings.length}</span></div>`;
     Object.keys(groups).sort().forEach(g => {
@@ -84,6 +86,7 @@
   }
   Object.assign(WH.act, {
     clsAdd() { clsForm('Add to a class', { group: classNames()[0], role: 'Member' }); },
+    clsNew(el) { clsForm('Add to a class', { person: el.dataset.p, group: classNames()[0], role: 'Member', period: el.dataset.jan ? O.nextYear + '-01 to 2099-12' : '' }); },
     clsTeacher(el) { clsForm('Add a teacher', { group: el.dataset.g, role: 'Teacher' }); },
     clsPerson(el) {
       const c = O.classes.find(x => x.name === el.dataset.g), m = c.teachers.concat(c.members).find(x => x.id === el.dataset.id); if (!m) return;

@@ -27,7 +27,7 @@
     const { esc, I, fmt } = WH, d = NL;
     document.querySelectorAll('.nladd').forEach(x => x.innerHTML = `<button class="btn small" data-act="nlNew">${I.plus} New</button>`);
     document.getElementById('body').innerHTML = `<div class="section-h"><span>Who gets it</span></div><div class="list">${d.orgs.map(o => `<div class="row"><div class="main"><div class="t">${esc(o.org)}</div><div class="s">${o.group ? 'Your newsletter list' : o.org === 'Ward' ? 'Every adult with an email' : 'Every ' + (o.org === 'Relief Society' ? 'sister' : 'brother') + ' with an email'}</div></div><span class="chip">${o.count}</span></div>`).join('')}</div>
-      <p class="foot">To send to a smaller list, add a group named "Newsletter" for your organization (People › Organizations, or All lists › Groups).</p>
+      <p class="foot">To send to a smaller list: More › Messages, pick the people, tap Save a new group, and name it Newsletter.</p>
       <div class="section-h"><span>Issues</span></div><div class="list">${d.list.length ? d.list.map(n => `<button class="row" data-go="#/x/newsletter/${encodeURIComponent(n.ID)}"><div class="main"><div class="t">${esc(n.Subject || 'Untitled')}</div><div class="s">${esc(n.Organization)} · ${esc(fmt(n.Date))}</div></div><span class="chip ${n.Status === 'Sent' ? 'green' : ''}">${esc(n.Status || 'Draft')}</span>${I.chev}</button>`).join('') : '<div class="empty">No newsletters yet. Tap New.</div>'}</div>`;
   }
   const nlFields = () => [{ name: 'Organization', type: 'select', options: NL.orgs.map(o => o.org) }, { name: 'Subject' }, { name: 'Date', label: 'Date (sets the birthday month)', type: 'date' }, { name: 'Intro', type: 'textarea' },

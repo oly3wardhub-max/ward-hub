@@ -24,7 +24,7 @@
     cal: ['Your calendar', 'Calendar › Add. Choose your organization, and set Repeat for a weekly activity. If one week is off, open it and tap "Not happening".'],
     ann: ['Announcements', 'More › Announcements › Add. The bishopric approves it, and it shows on the conducting sheet (and the program if you turn that on).'],
     sunday: ['Plan a Sunday', 'Sunday: swipe to the week, tap Edit for hymns and conducting, Add for speakers and prayers. "Speaker and prayer ideas" lists who hasn\'t spoken lately. Open a speaker and tap "Text an invitation" — they answer yes or no from a link.'],
-    program: ['Program', 'Sunday › Program: Publish updates the page the QR code opens; Print gives the paper copy.'],
+    program: ['Program', 'Sunday › Program: Preview shows the paper and phone versions. The bishopric taps Publish to update the page the QR code opens; Print gives the paper copy.'],
     conduct: ['Conducting', 'Sunday › Conduct: the whole script on your phone, with the sacrament prayers. Last-minute announcements and visiting authorities can be added right there.'],
     callings: ['Calling changes', 'People › Callings › New calling change. Move it along (Extended → Sustained → Set apart). On its Sunday it appears in the conducting script. The clerk sees it on "For LCR" and marks it Recorded.'],
     kevin: ['Your week', 'Today › This week is your checklist. Tap each as you finish it. The inbox holds dates read from linked calendars and scans until you approve them.'],

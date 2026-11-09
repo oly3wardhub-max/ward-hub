@@ -26,6 +26,8 @@ var SCHEMA = {"tabs":[
   {"name":"Permissions","section":"Calendar","cols":[["ID","id"],["Event","text"],["Date","date"],["Title","text"],["Organization","org"],["Person","person"],["Received","bool"],["Received on","date"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Permission and medical release forms turned in for activities and trips. Leaders use it from the app.","help":["","Calendar item ID","","","","Youth or child","","",""]},
   {"name":"Newsletters","section":"Leaders","cols":[["ID","id"],["Organization","org"],["Date","date"],["Subject","text"],["Intro","text"],["Items","text"],["Include calendar","bool"],["Attachment","link"],["Status","choice:Draft,Scheduled,Sending,Sent"],["Sent on","date"],["Sent to","number"],["Send plan","json"],["Notes","text"]],"read":["admin","bishopric","leader"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"Organization newsletters (Relief Society first).","help":["","","","","","A line starting with # is a heading; [lessons], [birthdays], [stake calendar], [ward calendar] and [new members] fill themselves in","","A link to the stake memo or a flyer","","","","Which addresses go on which day (made by the Hub)",""]},
   {"name":"Funerals","section":"Leaders","cols":[["ID","id"],["Name","text"],["Date","date"],["Time","time"],["Place","text"],["Viewing","text"],["Family contact","text"],["Family phone","phone"],["Presiding","text"],["Conducting","text"],["Organist","text"],["Chorister","text"],["Family prayer","text"],["Opening hymn","text"],["Invocation","text"],["Life sketch","text"],["Speakers","text"],["Musical numbers","text"],["Closing hymn","text"],["Benediction","text"],["Dedication of the grave","text"],["Burial","text"],["Luncheon","text"],["Status","choice:Planning,Held"],["Notes","text"]],"read":["admin","bishopric","clerk"],"edit":["admin","bishopric"],"scope":null,"note":"Funeral planning and the order of service.","help":["","Who passed away","","","","e.g. 9:30\u201310:30 AM, Relief Society room","","","","","","","","","","","One per line","One per line","","","","","","",""]},
+  {"name":"Emergency","section":"Emergency","cols":[["ID","id"],["Phase","choice:Right away,First hours,First days,Before,Info"],["Role","text"],["Order","number"],["Title","text"],["Text","text"],["Phone","phone"],["Link","link"],["Notes","text"]],"read":["admin","bishopric","clerk","leader","teacher"],"edit":["admin","bishopric"],"scope":null,"note":"The ward emergency plan, by role. Opens on phones even without a connection once it has been opened once.","help":["","","Everyone, Bishop, Bishopric, Executive secretary, Clerk, Elders quorum, Relief Society, Ministering, Youth leaders, Primary, Teachers, Emergency specialist","","","What to do","","",""]},
+  {"name":"Check-ins","section":"Emergency","cols":[["ID","id"],["Event","text"],["Household","text"],["Status","choice:Safe,Needs help,Can't reach"],["Needs","text"],["By","text"],["When","datetime"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Who has been accounted for in an emergency. Elders quorum and Relief Society leaders mark households from the app.","help":["","Which emergency","","","Medical, shelter, food, utilities\u2026","",""]},
   {"name":"Missionaries","section":"Leaders","cols":[["ID","id"],["Name","text"],["Title","choice:Elder,Sister,Couple"],["Mission","text"],["Email","email"],["Left","date"],["Home","date"],["On program","bool"],["Notes","text"]],"read":["admin","bishopric","clerk","member"],"edit":["admin","bishopric"],"scope":null,"note":"Missionaries serving from the ward.","help":["","","","","","","Expected","",""]},
   {"name":"Sources","section":"Engine","cols":[["ID","id"],["Organization","org"],["Kind","choice:Google Calendar,Google Sheet,Google Doc,iCal,Upload"],["Link","link"],["Goes to","choice:Events,Teaching,Groups,People,Announcements"],["Auto-approve","bool"],["Schedule","choice:Nightly,Weekly,Manual"],["Last read","datetime"],["Result","text"]],"read":["admin"],"edit":["admin"],"scope":null,"note":"Where each organization's calendar, lists and schedules come from.","help":["","","","","","","","",""]},
   {"name":"Inbox","section":"Engine","cols":[["ID","id"],["Received","datetime"],["From","text"],["Kind","text"],["Summary","text"],["Data","json"],["Status","choice:New,Approved,Edited,Skipped"],["Decided by","text"],["Decided on","datetime"]],"read":["admin"],"edit":["admin"],"scope":null,"note":"Things the Hub read that need a person's OK.","help":["","","","","","What the Hub read","","",""]},
@@ -74,13 +76,18 @@ var SCHEMA = {"tabs":[
   ["permission_form_link", "Youth", "Permission and medical release form", "https://www.churchofjesuschrist.org/bc/content/shared/content/english/pdf/callings/primary/parental-permission-medical-release.pdf?lang=en", "Sent to parents with permission-form texts"],
   ["newsletter_from", "Newsletter", "Newsletters signed by (blank = the organization's presidency)", "", ""],
   ["ask_hub", "Engine", "Ask the Hub (Yes/No)", "Yes", "Uses the Gemini key. Sends calendar and Sunday plans only: no phones, emails, birthdays or notes"],
+  ["emergency_active", "Emergency", "Emergency under way (set from the app)", "", ""],
+  ["emergency_place1", "Emergency", "Ward council gathering place", "", "From the red binder"],
+  ["emergency_place2", "Emergency", "Backup gathering place", "", ""],
+  ["emergency_hours", "Emergency", "Report every household to the bishop within (hours)", "4", ""],
+  ["emergency_stake_phone", "Emergency", "Stake emergency contact (name and phone)", "", ""],
   ["gemini_key", "Engine", "Gemini key (free tier) for reading photos and Docs", "", "Kept private"],
   ["gemini_model", "Engine", "Gemini model", "gemini-2.5-flash", "Change only if Google retires this one"],
   ["app_url", "Engine", "App address", "", ""],
   ["api_url", "Engine", "Engine address (Deploy \u203a Web app URL)", "", "Filled in after the first deployment"],
   ["public_calendar", "Engine", "Show the public calendar", "Yes", ""]
 ]};
-var VERSION = '2.9.2';
+var VERSION = '2.10.0';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -470,24 +477,38 @@ function sendLink_(a, app) {
 
 /* ---------------- Today ---------------- */
 var CHECKLIST = [
-  { id: 'inbox', day: 0, text: 'Review the inbox (scans, linked calendars)' },
-  { id: 'speakers', day: 1, text: 'Confirm next Sunday\'s speakers and prayers' },
-  { id: 'announce', day: 3, text: 'Approve announcements for Sunday' },
-  { id: 'lessons', day: 3, text: 'Send this week\'s lesson texts' },
-  { id: 'publish', day: 5, text: 'Publish the program' },
-  { id: 'reminders', day: 5, text: 'Text speaker and prayer reminders' },
-  { id: 'lcr', day: 1, text: 'Hand the For LCR list to the clerk' },
-  { id: 'appts', day: 6, text: 'Confirm Sunday interviews' }
+  { id: 'inbox', day: 0, text: 'Review the inbox (scans, linked calendars)', go: '#/x/inbox' },
+  { id: 'speakers', day: 1, text: 'Confirm next Sunday\'s speakers and prayers', go: '#/sunday' },
+  { id: 'lcr', day: 1, text: 'Hand the For LCR list to the clerk', go: '#/x/changes' },
+  { id: 'announce', day: 3, text: 'Approve announcements for Sunday', go: '#/x/announcements' },
+  { id: 'lessons', day: 3, text: 'Send this week\'s lesson texts', go: '#/x/lessons' },
+  { id: 'publish', day: 5, text: 'Publish the program', go: '#/sunday/{sun}/program' },
+  { id: 'reminders', day: 5, text: 'Text speaker and prayer reminders', go: '#/x/reminders' },
+  { id: 'appts', day: 6, text: 'Confirm Sunday interviews', go: '#/x/appointments' },
+  { id: 'lcrpaste', day: 1, text: 'Monthly: paste members and callings from LCR', go: '#/x/lcr', monthly: true },
+  { id: 'ypt', day: 1, text: 'Monthly: paste the youth protection report', go: '#/x/training', monthly: true }
 ];
+/* Items that are plainly done tick themselves. */
+function autoDone_() {
+  var sun = ymd_(nextSunday_()), out = {};
+  if (!rows_('Events').some(function (e) { return e.Status === 'Inbox'; }) && !rows_('Inbox').some(function (i) { return i.Status === 'New'; })) out.inbox = 'Nothing waiting';
+  if (!rows_('Announcements').some(function (a) { return a.Status === 'New'; })) out.announce = 'Nothing to approve';
+  var S = rows_('Sundays').filter(function (x) { return x.Date === sun; })[0]; if (S && S.Published) out.publish = 'Published';
+  var parts = rows_('Participants').filter(function (p) { return p.Date === sun && p.Person && /Accepted/.test(p.Status); });
+  if (parts.length && parts.every(function (p) { return p.Reminded; })) out.reminders = 'All reminded';
+  if (parts.length && !rows_('Participants').some(function (p) { return p.Date === sun && /Idea|Asked/.test(p.Status); })) out.speakers = 'All accepted';
+  return out;
+}
 function today_view_(me) {
   var t = today_(), tY = ymd_(t), wkEnd = ymd_(addDays_(t, 7)), sun = nextSunday_(t), sunY = ymd_(sun);
   var needs = [], week = [];
+  try { var em = emActive_(); if (em && (isBishopric_(me) || me.roles.leader || me.roles.clerk || me.roles.teacher)) needs.push({ kind: 'emergency', title: 'Emergency: ' + em.name, due: '', top: true, sub: 'Tap for what to do now' }); } catch (e) {}
   var myName = nkey_(me.name), myCallings = (me.callings || []).map(nkey_);
   if (can_(me, 'Tasks', 'read')) {
     visible_(me, 'Tasks').forEach(function (x) {
       if (x.Status === 'Done') return;
       var o = nkey_(x.Owner), mine = o && (o.indexOf(myName) >= 0 || myName.indexOf(o) >= 0 || myCallings.some(function (c) { return c && (c.indexOf(o) >= 0 || o.indexOf(c) >= 0); }));
-      if (!mine && !(me.roles.admin && /executive|kevin/i.test(x.Owner))) return;
+      if (!mine && !(me.roles.admin && (/executive|secretary/i.test(x.Owner) || (setting_('exec_sec') && nkey_(x.Owner) === nkey_(setting_('exec_sec')))))) return;
       needs.push({ kind: 'task', id: x.ID, title: x.Task, due: x.Due, sub: x.Organization + (x.Source ? ' · ' + x.Source : ''), status: x.Status });
     });
   }
@@ -523,7 +544,7 @@ function today_view_(me) {
     var topic = String(l.Lesson || '').replace(/^Come, Follow Me( for Primary)?:\s*/i, '');
     needs.push({ kind: 'teach', id: l.ID, title: 'You teach ' + (l.Class && l.Class !== l.Organization ? l.Class : l.Organization) + (topic ? ': ' + topic : ''), due: l.Date, sub: l.Organization, link: l.Link || (typeof lessonLink_ === 'function' ? lessonLink_(l.Organization, l.Lesson, l.Date) : '') });
   });
-  needs.sort(function (a, b) { return String(a.due || '9999').localeCompare(String(b.due || '9999')); });
+  needs.sort(function (a, b) { return (b.top ? 1 : 0) - (a.top ? 1 : 0) || String(a.due || '9999').localeCompare(String(b.due || '9999')); });
 
   if (can_(me, 'Events', 'read')) occurrences_(me, tY, wkEnd).forEach(function (e) { week.push({ date: e.date, time: e.time, title: e.title, org: e.org, place: e.place }); });
   meetingsFor_(t, 7).forEach(function (m) { if (isBishopric_(me) || (m.type === 'Ward council' && me.roles.leader)) week.push(m); });
@@ -537,7 +558,8 @@ function today_view_(me) {
   var out = { date: tY, needs: needs, week: week, sunday: sunday };
   if (me.roles.admin) {
     var done = JSON.parse(PropertiesService.getScriptProperties().getProperty('chk:' + weekKey_()) || '{}');
-    out.checklist = CHECKLIST.map(function (c) { return { id: c.id, text: c.text, day: c.day, done: done[c.id] || '' }; });
+    var auto = autoDone_(), sunY = ymd_(nextSunday_()), firstWeek = today_().getDate() <= 7;
+    out.checklist = CHECKLIST.filter(function (c) { return !c.monthly || firstWeek; }).map(function (c) { return { id: c.id, text: c.text, day: c.day, go: String(c.go || '').replace('{sun}', sunY), done: done[c.id] || auto[c.id] || '' }; });
   }
   return out;
 }
@@ -738,7 +760,8 @@ ACTIONS.audiences = function (req, me) {
       .map(function (g) { return byName[nkey_(g.Person)] || { Name: g.Person, Phone: '' }; });
   };
   orgs.forEach(function (org) {
-    if (org === 'Relief Society' || org === 'Elders Quorum') {
+    var leadsIt = isBishopric_(me) || me.orgs.indexOf(org) >= 0;
+    if ((org === 'Relief Society' || org === 'Elders Quorum') && leadsIt) {
       var all = adults(org === 'Relief Society' ? 'F' : 'M');
       add(org, 'all', org === 'Relief Society' ? 'All sisters' : 'All brothers', all.map(function (p) { return m(p); }));
       add(org, 'attends', 'Those who attend', all.filter(function (p) { return p.Attends === 'Yes'; }).map(function (p) { return m(p); }));
@@ -772,6 +795,10 @@ ACTIONS.audiences = function (req, me) {
       var leaders = C.filter(function (c) { return c.Organization === org; }).map(function (c) { return byName[nkey_(c.Person)]; }).filter(Boolean);
       var seen = {}, tl = teachers.concat(leaders).filter(function (p) { if (seen[p.Name]) return false; seen[p.Name] = 1; return true; });
       add(org, 'leaders', 'Leaders and teachers', tl.map(function (p) { return m(p); }));
+    }
+    if (leadsIt && ['Relief Society', 'Elders Quorum', 'Young Women', 'Young Men', 'Primary', 'Sunday School', 'Ward council', 'Ward', 'Bishopric', 'Stake'].indexOf(org) < 0) {
+      var seenC = {};
+      add(org, 'callings', 'Everyone with a calling here', C.filter(function (c) { return c.Organization === org; }).map(function (c) { return byName[nkey_(c.Person)]; }).filter(function (p) { if (!p || seenC[p.Name]) return false; seenC[p.Name] = 1; return true; }).map(function (p) { return m(p); }));
     }
     if (org === 'Ward council' || org === 'Ward') {
       var wc = C.filter(function (c) { return /^(Bishop|Bishopric .*Counselor|Ward Executive Secretary|Ward Clerk|Relief Society President|Elders Quorum President|Young Women President|Primary President|Sunday School President|Ward Mission Leader|Ward Temple and Family History Leader)$/i.test(c.Calling); });
@@ -968,7 +995,7 @@ ACTIONS.calendar = function (req, me) {
   occ.sort(function (a, b) { return (a.date + timeKey_(a.time)).localeCompare(b.date + timeKey_(b.time)); });
   var canAdd = isBishopric_(me) || me.roles.leader;
   var myOrgs = isBishopric_(me) ? ORG_LIST_ : me.orgs.concat(me.orgs.some(function (o) { return /Young (Wo)?men/.test(o); }) ? ['Youth'] : []);
-  var pending = (isBishopric_(me) || me.roles.admin) ? rows_('Events').filter(function (e) { return e.Status === 'Inbox'; }).length : 0;
+  var pending = me.roles.admin ? rows_('Events').filter(function (e) { return e.Status === 'Inbox'; }).length : 0;
   return { from: from, to: to, events: occ, canAdd: canAdd, orgs: myOrgs, pending: pending };
 };
 var ORG_LIST_ = ['Ward', 'Bishopric', 'Relief Society', 'Elders Quorum', 'Young Women', 'Young Men', 'Youth', 'Primary', 'Sunday School', 'Temple & Family History', 'Ward Mission', 'Activities', 'Music', 'Stake'];
@@ -1093,7 +1120,18 @@ ACTIONS.org = function (req, me) {
   });
   var list = Object.keys(groups).map(function (k) { var g = groups[k]; g.members.sort(function (a, b) { return a.person.localeCompare(b.person); }); return g; });
   if (!lead) { var myk = nkey_(me.name); list = list.filter(function (g) { return g.teachers.some(function (t) { return nkey_(t.person) === myk; }); }); }
-  return { org: org, lead: lead, callings: callings, classes: list, open: rows_('Callings').filter(function (c) { return c.Organization === org && c.Status === 'Open'; }).map(function (c) { return { id: c.ID, calling: c.Calling }; }) };
+  var band = { 'Young Women': ['F', 12, 18], 'Young Men': ['M', 12, 18], 'Primary': ['', 3, 11] }[org], unassigned = [], coming = [];
+  if (lead && band) {
+    var Y = today_().getFullYear(), inAny = {};
+    rows_('Groups').forEach(function (g) { if (g.Organization === org && (g.Kind === 'Class' || g.Kind === 'Quorum') && g.Role !== 'Teacher') inAny[nkey_(g.Person)] = 1; });
+    rows_('People').forEach(function (p) {
+      if (p.Source === 'Moved out' || !p['Birth date'] || (band[0] && p.Gender !== band[0]) || inAny[nkey_(p.Name)]) return;
+      var turns = Y - +String(p['Birth date']).slice(0, 4), a = age_(p['Birth date']);
+      if (turns >= band[1] && turns <= band[2] && a !== null && a < 18) unassigned.push({ person: p.Name, turns: turns });
+      else if (org !== 'Primary' && turns + 1 === band[1]) coming.push({ person: p.Name, turns: turns + 1 });
+    });
+  }
+  return { org: org, lead: lead, callings: callings, classes: list, unassigned: unassigned.sort(function (a, b) { return a.person.localeCompare(b.person); }), coming: coming.sort(function (a, b) { return a.person.localeCompare(b.person); }), nextYear: today_().getFullYear() + 1, open: rows_('Callings').filter(function (c) { return c.Organization === org && c.Status === 'Open'; }).map(function (c) { return { id: c.ID, calling: c.Calling }; }) };
 };
 /* Class lists: the presidency adds, moves or removes a member, or sets a teacher. */
 ACTIONS.classSet = function (req, me) {
@@ -2321,6 +2359,128 @@ ACTIONS.readInSave = function (req, me) {
   var data = cleanRead_(req.lessons ? 'Teaching' : 'Events', { events: req.events, lessons: req.lessons });
   data.org = org;
   return { added: applyIn_(me, data, 'Added by ' + me.name), held: 0 };
+};
+
+/* ---------- speaker and prayer reminders (Friday), and attendance marks for Relief Society and elders quorum leaders ---------- */
+ACTIONS.reminders = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('Reminders are for the bishopric and executive secretary.');
+  var d = /^\d{4}-\d\d-\d\d$/.test(req.date || '') ? req.date : ymd_(nextSunday_()), ppl = {}; rows_('People').forEach(function (p) { ppl[nkey_(p.Name)] = p; });
+  var time = setting_('meeting_time') || '', when = Utilities.formatDate(parseYmd_(d), tz_(), 'EEEE, MMMM d');
+  var verb = function (r) { return /speaker|high council/i.test(r) ? 'speaking' : /invocation/i.test(r) ? 'giving the opening prayer' : /benediction/i.test(r) ? 'giving the closing prayer' : /musical/i.test(r) ? 'sharing the musical number' : 'taking part'; };
+  return { date: d, list: rows_('Participants').filter(function (p) { return p.Date === d && p.Person && /Accepted/.test(p.Status); }).sort(function (a, b) { return (+a.Order || 0) - (+b.Order || 0); }).map(function (p) {
+    var q = ppl[nkey_(p.Person)] || {};
+    return { id: p.ID, person: p.Person, role: p.Role, topic: p.Topic || '', reminded: p.Reminded || '', phone: q.Phone || '',
+      text: 'Hi ' + first_(p.Person) + ', thank you for ' + verb(p.Role) + ' in sacrament meeting this ' + when + (time ? ' at ' + time : '') + '.' + (p.Topic && /speaker/i.test(p.Role) ? ' Your topic is ' + p.Topic + (p.Minutes ? ', about ' + p.Minutes + ' minutes' : '') + '.' : '') + ' Please sit on the stand a few minutes early. Thank you!' };
+  }) };
+};
+ACTIONS.reminded = function (req, me) { if (!isBishopric_(me)) throw new Error('Not allowed'); save_(me, 'Participants', { ID: req.id, Reminded: ymd_(today_()) }, { system: true }); return {}; };
+ACTIONS.setAttends = function (req, me) {
+  var p = rows_('People').filter(function (x) { return x.Name === req.name; })[0]; if (!p) throw new Error('Not found');
+  var a = age_(p['Birth date']), org = p.Gender === 'F' ? 'Relief Society' : 'Elders Quorum';
+  if (!(isBishopric_(me) || me.roles.clerk || (me.orgs.indexOf(org) >= 0 && a !== null && a >= 18))) throw new Error('Only that person\'s presidency can mark this.');
+  var v = ['Yes', 'Sometimes', 'No', 'Unknown'].indexOf(req.value) >= 0 ? req.value : 'Unknown';
+  save_(me, 'People', { ID: p.ID, Attends: v }, { system: true }); return { attends: v };
+};
+
+
+/* ================= Emergency plan: what each leader does, step by step, and checking on every household ================= */
+/* A starter plan from the Church's ward emergency planning guide. Replace it with the ward's own plan (the red binder) in All lists › Emergency. */
+var EM_STARTER = [
+  ['Info', 'Everyone', 1, 'Ward council gathering place', 'Fill in from the red binder (Settings › Emergency).'],
+  ['Info', 'Everyone', 2, 'If phones are down', 'Text instead of calling: texts often get through when calls don\'t. If nothing works, go in person to the gathering place.'],
+  ['Right away', 'Everyone', 1, 'Your family first', 'Make sure you and your family are safe. Give first aid. Call 911 for anything life-threatening.'],
+  ['Right away', 'Everyone', 2, 'Follow civil authorities', 'Do what police and fire officials say: evacuate, or stay where you are.'],
+  ['Right away', 'Everyone', 3, 'Check on those near you', 'Check on your neighbors, then on the families you minister to. Text a short report to your elders quorum or Relief Society leader.'],
+  ['Right away', 'Bishop', 1, 'Go to the gathering place', 'Once your family is safe, go to the ward council gathering place, or gather the council by text.'],
+  ['Right away', 'Bishop', 2, 'Start the check-in', 'Open More › Emergency plan and tap Start. Every leader then sees what to do, and elders quorum and Relief Society leaders mark each household.'],
+  ['First hours', 'Bishop', 1, 'Report to the stake president', 'Report the condition of members and missionaries, then of the meetinghouse. Use the "Report to the stake" text on this screen.'],
+  ['First hours', 'Bishop', 2, 'Meet the needs', 'Decide on food, shelter, medical care and clothing for those who need them, working with civil authorities and relief organizations.'],
+  ['First days', 'Bishop', 1, 'Care for those who lost the most', 'Help members who lost homes, belongings or work, and those who are hurting. Look for ways the ward can help the community.'],
+  ['Right away', 'Bishopric', 1, 'Help the bishop', 'Join the gathering. One counselor checks on the youth and Primary leaders; one checks on the meetinghouse from outside (never enter a damaged building).'],
+  ['Right away', 'Executive secretary', 1, 'Keep the list', 'Watch the check-in on this screen. Call or text anyone marked "Can\'t reach." Keep a short log of decisions.'],
+  ['First hours', 'Executive secretary', 2, 'Send the report', 'Send the bishop\'s report to the stake when he approves it.'],
+  ['Right away', 'Elders quorum', 1, 'Start the ministering brothers', 'Text the zone leaders to check on every household they minister to.'],
+  ['First hours', 'Elders quorum', 2, 'Mark each household', 'Mark each one Safe, Needs help or Can\'t reach in the check-in, with any needs (medical, shelter, food, utilities).'],
+  ['First hours', 'Elders quorum', 3, 'Organize help', 'Gather brothers with tools and skills (chainsaws, generators, first aid) where the bishop sends them.'],
+  ['Right away', 'Relief Society', 1, 'Start the ministering sisters', 'Text ministering sisters to check on every sister and family they minister to. Check first on those who live alone, are elderly or have special needs.'],
+  ['First hours', 'Relief Society', 2, 'Mark each household', 'Mark each one Safe, Needs help or Can\'t reach in the check-in, with any needs.'],
+  ['First hours', 'Relief Society', 3, 'Care and meals', 'Arrange meals, a place to stay, and someone to sit with those who are frightened or grieving.'],
+  ['Right away', 'Youth leaders', 1, 'If it happens at an activity', 'Keep the youth together with two adults. Take roll. Contact parents. Release a youth only to a parent or someone the parent names.'],
+  ['First hours', 'Youth leaders', 2, 'Afterward', 'Text the parents of every youth in your class to be sure they are safe, and tell your president.'],
+  ['Right away', 'Primary', 1, 'If it happens during church', 'Teachers keep children together and leave by the nearest safe exit to the gathering spot outside. Take roll. Release a child only to a parent or guardian.'],
+  ['Right away', 'Teachers', 1, 'If it happens during class', 'Stay with your class, leave by the nearest safe exit, and take roll at the gathering spot outside.'],
+  ['First hours', 'Clerk', 1, 'Records and the list', 'Keep ward records safe and help the executive secretary reach those marked "Can\'t reach."'],
+  ['Right away', 'Emergency specialist', 1, 'Communications', 'Set up the backup ways to talk (text, radio, in person) and keep the bishop connected to the stake.'],
+  ['Before', 'Everyone', 1, 'Your family plan', 'Keep a 72-hour kit, water and a family plan. Know where you would meet if you were apart.'],
+  ['Before', 'Bishopric', 1, 'Review the plan yearly', 'Ward council reviews this plan once a year and after any emergency.'],
+  ['Before', 'Elders quorum', 1, 'Keep the lists current', 'With the Relief Society: members with special needs, and members with useful skills or equipment.'],
+  ['Before', 'Emergency specialist', 1, 'Test the backups', 'Test the backup ways to talk twice a year.']
+];
+function emSeed_() {
+  if (rows_('Emergency').length) return;
+  EM_STARTER.forEach(function (r) { save_(null, 'Emergency', { Phase: r[0], Role: r[1], Order: r[2], Title: r[3], Text: r[4], Notes: 'Starter plan' }, { system: true, quiet: true }); });
+}
+/* Which parts of the plan are this person's. */
+function emRoles_(me) {
+  var r = ['Everyone'], c = (me.callings || []).join('|');
+  if ((me.callings || []).some(function (x) { return /^Bishop$/i.test(x); })) r.push('Bishop');
+  if (me.roles.bishopric) r.push('Bishopric');
+  if (/Executive Secretary/i.test(c)) r.push('Executive secretary');
+  if (me.roles.clerk) r.push('Clerk');
+  if (me.orgs.indexOf('Elders Quorum') >= 0) r.push('Elders quorum');
+  if (me.orgs.indexOf('Relief Society') >= 0) r.push('Relief Society');
+  if (me.orgs.indexOf('Young Women') >= 0 || me.orgs.indexOf('Young Men') >= 0) r.push('Youth leaders');
+  if (me.orgs.indexOf('Primary') >= 0) r.push('Primary');
+  if (me.roles.teacher) r.push('Teachers');
+  if (/emergency|preparedness/i.test(c)) r.push('Emergency specialist');
+  if (/ministering/i.test(c) || me.orgs.indexOf('Elders Quorum') >= 0 || me.orgs.indexOf('Relief Society') >= 0) r.push('Ministering');
+  return r;
+}
+function emActive_() { try { return JSON.parse(setting_('emergency_active') || 'null'); } catch (e) { return null; } }
+function canCheck_(me) { return isBishopric_(me) || me.roles.clerk || me.orgs.indexOf('Elders Quorum') >= 0 || me.orgs.indexOf('Relief Society') >= 0; }
+ACTIONS.emergency = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.leader || me.roles.clerk || me.roles.teacher)) throw new Error('The emergency plan is for leaders and teachers.');
+  emSeed_();
+  var mine = emRoles_(me), plan = rows_('Emergency').map(strip_).sort(function (a, b) { return String(a.Role).localeCompare(String(b.Role)) || (+a.Order || 0) - (+b.Order || 0); });
+  var C = rows_('Callings').filter(function (c) { return !/Released|Proposed|Open/.test(c.Status); }), ppl = {}; rows_('People').forEach(function (p) { ppl[nkey_(p.Name)] = p; });
+  var key = /^(Bishop|Bishopric .*Counselor|Ward Executive Secretary|Ward Clerk|Relief Society President|Elders Quorum President|Young Women President|Primary President|Sunday School President|Ward Mission Leader|.*Emergency.*)$/i;
+  var contacts = C.filter(function (c) { return key.test(c.Calling); }).map(function (c) { var p = ppl[nkey_(c.Person)] || {}; return { name: c.Person, calling: c.Calling, phone: p.Phone || '' }; });
+  var out = { plan: plan, mine: mine, active: emActive_(), contacts: contacts, canStart: isBishopric_(me), canCheck: canCheck_(me), canEdit: isBishopric_(me),
+    places: [setting_('emergency_place1'), setting_('emergency_place2')].filter(Boolean), stake: setting_('emergency_stake_phone'), hours: +setting_('emergency_hours') || 4 };
+  if (out.active && canCheck_(me)) out.check = emBoard_(me, out.active);
+  return out;
+};
+/* Every household, with its latest mark in this emergency. Elders quorum and Relief Society see the households they serve; the bishopric sees all. */
+function emBoard_(me, act) {
+  var latest = {}; rows_('Check-ins').forEach(function (r) { if (r.Event === act.id && (!latest[r.Household] || String(r.When) >= String(latest[r.Household].When))) latest[r.Household] = r; });
+  var hh = {};
+  rows_('People').forEach(function (p) {
+    if (p.Source === 'Moved out') return;
+    var h = p.Household || p['Sort name'] || p.Name; (hh[h] = hh[h] || { household: h, people: [], phones: [] });
+    hh[h].people.push(p.Name); if (p.Phone && (age_(p['Birth date']) || 99) >= 18) hh[h].phones.push({ n: p.Name, p: p.Phone });
+  });
+  var list = Object.keys(hh).sort().map(function (k) { var x = hh[k], l = latest[k]; x.status = l ? l.Status : ''; x.needs = l ? l.Needs : ''; x.by = l ? l.By : ''; x.when = l ? l.When : ''; x.phones = x.phones.slice(0, 2); x.people = x.people.slice(0, 8); return x; });
+  var n = function (s) { return list.filter(function (x) { return x.status === s; }).length; };
+  return { list: list, counts: { total: list.length, safe: n('Safe'), help: n('Needs help'), cant: n('Can\'t reach'), left: n('') } };
+}
+ACTIONS.emergencyStart = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('The bishopric starts the emergency check-in.');
+  var name = String(req.name || '').trim().slice(0, 80) || 'Emergency';
+  var act = { id: 'EM-' + Utilities.formatDate(new Date(), tz_(), "yyyyMMdd-HHmm"), name: name, started: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"), by: me.name };
+  save_(me, 'Settings', { Key: 'emergency_active', Value: JSON.stringify(act) }, { system: true }); SET_CACHE_ = null;
+  return { active: act };
+};
+ACTIONS.emergencyEnd = function (req, me) {
+  if (!isBishopric_(me)) throw new Error('The bishopric ends the emergency check-in.');
+  save_(me, 'Settings', { Key: 'emergency_active', Value: '' }, { system: true }); SET_CACHE_ = null; return {};
+};
+ACTIONS.checkIn = function (req, me) {
+  if (!canCheck_(me)) throw new Error('Elders quorum and Relief Society leaders and the bishopric mark households.');
+  var act = emActive_(); if (!act) throw new Error('No emergency check-in is running.');
+  if (['Safe', 'Needs help', 'Can\'t reach'].indexOf(req.status) < 0) throw new Error('Pick Safe, Needs help or Can\'t reach.');
+  var h = String(req.household || '').slice(0, 120); if (!h) throw new Error('Pick a household.');
+  save_(null, 'Check-ins', { Event: act.id, Household: h, Status: req.status, Needs: String(req.needs || '').slice(0, 300), By: me.name, When: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm") }, { system: true, quiet: true });
+  return { counts: emBoard_(me, act).counts };
 };
 
 
