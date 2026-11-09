@@ -61,6 +61,7 @@ var SCHEMA = {"tabs":[
   ["bld_holidays", "Building", "Holidays with family limits", "Thanksgiving,Christmas Eve,Christmas,New Year's Eve,New Year's Day", ""],
   ["archive_months", "Housekeeping", "Keep history this many months", "18", ""],
   ["archive_month", "Housekeeping", "Tidy-up month", "January", ""],
+  ["email_pause", "Housekeeping", "Pause all emails (Yes/No)", "Yes", "While Yes, the Hub sends nothing except sign-in links to admins"],
   ["email_daily_cap", "Housekeeping", "Emails per day (Google limit 100)", "90", ""],
   ["gemini_key", "Engine", "Gemini key (free tier) for reading photos and Docs", "", "Kept private"],
   ["app_url", "Engine", "App address", "", ""],
@@ -335,7 +336,7 @@ var ACTIONS = {
     if (!email || cache.get('link:' + email)) return { sent: true };
     cache.put('link:' + email, '1', 900);
     var a = null; rows_('Access').some(function (r) { if (String(r.Email).toLowerCase() === email && r.Status !== 'Removed' && r.Status !== 'Paused') { a = r; return true; } return false; });
-    if (a) { ensureKey_(a); sendLink_(a, req.app); }
+    if (a && (!emailPaused_() || /admin/i.test(a.Role || ''))) { ensureKey_(a); sendLink_(a, req.app); }
     return { sent: true };
   },
 
@@ -377,11 +378,13 @@ var ACTIONS = {
     if (!a) throw new Error('Not found');
     if (req.renew) a.Key = '';
     ensureKey_(a);
-    if (req.email !== false) sendLink_(a, req.app);
+    if (req.email !== false && !emailPaused_()) sendLink_(a, req.app);
     return { link: linkFor_(a, req.app) };
   }
 };
 
+/* Emails are paused until the ward is ready (Settings › Pause all emails). While paused, only admins can get their sign-in link. */
+function emailPaused_() { return !/^no$/i.test(setting_('email_pause') || 'Yes'); }
 function weekKey_() { var s = addDays_(today_(), -today_().getDay()); return ymd_(s); }
 function ensureKey_(a) {
   if (a.Key) return a.Key;
