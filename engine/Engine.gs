@@ -51,6 +51,7 @@ var SCHEMA = {"tabs":[
   ["due_months", "Sunday", "Suggest speakers after this many months", "24", ""],
   ["skip_days", "Sunday", "Skip someone in suggestions for this many days", "60", ""],
   ["program_footer", "Program", "Program footer", "", ""],
+  ["zoom_link", "Program", "Zoom link for sacrament meeting (blank = none)", "", "Shown on the online program, with its own QR code"],
   ["show_birthdays", "Program", "Show birthdays on the program", "Yes", ""],
   ["show_quote", "Program", "Show the quote on the program", "Yes", ""],
   ["show_picture", "Program", "Picture of the Savior on the program", "Yes", ""],
@@ -87,7 +88,7 @@ var SCHEMA = {"tabs":[
   ["api_url", "Engine", "Engine address (Deploy \u203a Web app URL)", "", "Filled in after the first deployment"],
   ["public_calendar", "Engine", "Show the public calendar", "Yes", ""]
 ]};
-var VERSION = '2.10.0';
+var VERSION = '2.11.0';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -713,6 +714,7 @@ function buildProgram_(d) {
     invocation: who('Invocation'), benediction: who('Benediction'), items: items, fast: S.Type === 'Fast & Testimony',
     business: true, theme: /^no$/i.test(set.show_quote || 'Yes') ? null : (S['Theme text'] || S.Theme ? { text: S['Theme text'] || '', source: S.Theme || '' } : null),
     announcements: ann, birthdays: birthdays, missionaries: miss, picture: pic, footer: set.program_footer || '',
+    zoom: /^https:\/\//.test(set.zoom_link || '') ? set.zoom_link : '',
     building: set.app_url ? String(set.app_url).replace(/[#?].*$/, '') + 'building.html' : ''
   };
 }
@@ -1502,6 +1504,7 @@ function jobRecord_(name, fn) {
 function nightly() {
   jobRecord_('sources', readSources_);
   jobRecord_('meetings', function () { ensureMeetings_(); return 'ok'; });
+  jobRecord_('publish', autoPublish_);
   jobRecord_('emails', function () { if (emailPaused_()) return 'paused'; return emailJobs_(null) + ' sent'; });
   jobRecord_('backup', function () { return backup_(false); });
   jobRecord_('tidy', tidy_);
@@ -2482,6 +2485,34 @@ ACTIONS.checkIn = function (req, me) {
   save_(null, 'Check-ins', { Event: act.id, Household: h, Status: req.status, Needs: String(req.needs || '').slice(0, 300), By: me.name, When: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm") }, { system: true, quiet: true });
   return { counts: emBoard_(me, act).counts };
 };
+
+/* ================= v1 parity: leaders recommend calling changes; the program publishes itself on Sunday morning ================= */
+ACTIONS.recommendCalling = function (req, me) {
+  var org = String(req.org || ''); if (!(isBishopric_(me) || me.orgs.indexOf(org) >= 0)) throw new Error('Recommend changes for your own organization.');
+  var person = String(req.person || '').trim(), calling = String(req.calling || '').trim().slice(0, 80), change = req.change === 'Release' ? 'Release' : 'Call';
+  if (!person || !calling) throw new Error('Add the person and the calling.');
+  var sys = Object.assign({}, me, { roles: Object.assign({}, me.roles, { admin: 1, bishopric: 1 }) });
+  var id = save_(sys, 'Callings', { Organization: org, Calling: calling, Person: person, Status: 'Proposed', Change: change, Source: 'Hub', 'Private notes': ('Recommended by ' + me.name + (req.why ? ': ' + String(req.why).slice(0, 300) : '')) }, { system: true, quiet: true });
+  try {
+    ensureMeetings_();
+    var bm = rows_('Meetings').filter(function (m) { return m.Type === 'Bishopric' && m.Status === 'Planned' && m.Date >= ymd_(today_()); }).sort(function (a, b) { return a.Date.localeCompare(b.Date); })[0];
+    if (bm) save_(sys, 'Agenda', { Meeting: bm.ID, Order: 50, Item: 'Calling recommendation (' + org + '): ' + change + ' ' + person + (change === 'Release' ? ' from ' : ' as ') + calling, Lead: 'Bishop', Source: me.name }, { system: true, quiet: true });
+  } catch (e) {}
+  log_(me.name, 'recommend', 'Callings', id, org);
+  return { id: id };
+};
+ACTIONS.myRecommendations = function (req, me) {
+  var k = nkey_(me.name);
+  return { list: rows_('Callings').filter(function (c) { return c.Source === 'Hub' && String(c['Private notes'] || '').indexOf('Recommended by ' + me.name) === 0; }).map(function (c) { return { person: c.Person, calling: c.Calling, change: c.Change, status: c.Status, org: c.Organization }; }) };
+};
+function autoPublish_() {
+  if (today_().getDay() !== 0) return 'not Sunday';
+  var d = ymd_(today_()), S = rows_('Sundays').filter(function (s) { return s.Date === d; })[0];
+  if (!S || S.Type === 'No meeting') return 'no meeting today';
+  if (S.Published) return 'already published';
+  ACTIONS.publish({ date: d }, { name: 'Hub', roles: { admin: 1, bishopric: 1 }, orgs: [] });
+  return 'published';
+}
 
 
 /* ================= One-time repairs (run by setUp; safe to repeat) ================= */
