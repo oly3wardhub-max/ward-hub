@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Set Up Ward Hub</title><meta name="robots" content="noindex">
+<link rel="stylesheet" href="app.css?v=2.0.0">
+<style>.screen{padding-bottom:40px}ol{padding-left:22px;margin:0}ol li{margin:0 0 14px;line-height:1.45}code{background:var(--card2);padding:2px 6px;border-radius:6px;font-size:15px}.list{padding:16px 16px 4px}</style>
+</head><body><main class="screen">
+<div class="largetitle"><h1>Set up Ward Hub</h1></div>
+<p class="subtitle">For a ward that wants its own copy. About 20 minutes. Each ward's copy is completely separate: no data is shared, and none is stored in this app's code.</p>
+<div class="section-h"><span>1 · The spreadsheet (your ward's data)</span></div>
+<div class="list"><ol>
+<li>Sign in to Google with a ward account (for example, a Gmail made for the executive secretary).</li>
+<li>Make a new, empty Google Sheet. Name it <b>Ward Hub</b>.</li>
+<li>Choose <b>Extensions › Apps Script</b>. Delete what's there and paste everything from <a href="engine/Engine.gs">Engine.gs</a>. Click Save.</li>
+<li>Pick <b>setUp</b> in the function list and click <b>Run</b>. Allow access when Google asks. Every tab is created for you.</li>
+<li>On the <b>Settings</b> tab, fill in the Value column (ward name, bishop, executive secretary…).</li>
+</ol></div>
+<div class="section-h"><span>2 · Turn on the engine</span></div>
+<div class="list"><ol>
+<li>In Apps Script: <b>Deploy › New deployment › Web app</b>. Execute as: <b>Me</b>. Who has access: <b>Anyone</b>. Click Deploy and copy the Web app URL.</li>
+<li>Paste that URL into Settings › <b>Engine address</b>.</li>
+</ol></div>
+<div class="section-h"><span>3 · The app</span></div>
+<div class="list"><ol>
+<li>Make a free GitHub account, then <b>fork</b> (copy) this app's repository to it.</li>
+<li>In your copy: <b>Settings › Pages</b> › Deploy from a branch › <b>main</b> › Save. Your app's address appears there.</li>
+<li>Put your app address in Settings › <b>App address</b>, and (optional) your engine URL in <code>config.js</code>.</li>
+<li>Back in the spreadsheet, choose <b>Ward Hub › Show my admin link</b> and open it on your phone.</li>
+<li>Add people on the <b>Access</b> tab (name and email). From the app, send each person their personal link.</li>
+</ol></div>
+<p class="foot">Paste LCR lists (members, callings) from the app's Paste screen to fill People and Callings.</p>
+<div class="btns"><a class="btn gray" href="./">Back to Ward Hub</a></div>
+</main></body></html>
