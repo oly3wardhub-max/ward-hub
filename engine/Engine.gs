@@ -8,8 +8,8 @@
 var SCHEMA = {"tabs":[
   {"name":"Settings","section":"Setup","cols":[["Key","key"],["Section","text"],["Setting","text"],["Value","text"],["Help","text"]],"read":["admin","bishopric"],"edit":["admin"],"scope":null,"note":"Every setting in one place. Change only the Value column.","help":["Internal name; don't change","","What it is","Change this",""]},
   {"name":"Access","section":"Setup","cols":[["ID","id"],["Person","person"],["Email","email"],["Phone","phone"],["Role","choice:Admin,Bishopric,Clerk,Leader,Teacher,Music,Building,Member"],["Organizations","text"],["Status","choice:Active,Paused,Removed"],["Key","secret"],["Link sent","date"],["Last opened","datetime"],["Notes","text"]],"read":["admin"],"edit":["admin"],"scope":null,"note":"Who can open the app. Access normally follows callings; this tab holds keys and overrides.","help":["","","","","Blank = from their calling","Blank = from their calling","","Personal sign-in key (made by the Hub)","","",""]},
-  {"name":"People","section":"People","cols":[["ID","id"],["Name","text"],["Sort name","text"],["Gender","choice:M,F"],["Birth date","date"],["Phone","phone"],["Email","email"],["Parent phone","phone"],["Household","text"],["Spouse","person"],["Attends","choice:Yes,Sometimes,No,Unknown"],["Moved in","date"],["Don't ask to speak","bool"],["Don't text","bool"],["No birthday on program","bool"],["Notes","text"],["Source","choice:LCR,Manual,Moved out"],["Updated","date"]],"read":["admin","bishopric","clerk","leader","teacher"],"edit":["admin","bishopric","clerk"],"scope":null,"note":"Everyone in the ward, from LCR. Notes are bishopric-only.","help":["","First Last","Last, First","","","","","Youth only","","","","","","","","Bishopric only","",""]},
-  {"name":"Callings","section":"People","cols":[["ID","id"],["Organization","org"],["Group","text"],["Calling","text"],["Person","person"],["Status","choice:Serving,Proposed,Extended,Sustained,Set apart,Release planned,Released,Open"],["Sustained","date"],["Set apart","date"],["Change","choice:,Call,Release,Call and release"],["Sunday","date"],["Extends","person"],["Sets apart","person"],["Recorded in LCR","date"],["Private notes","text"],["Source","choice:LCR,Hub"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric","clerk"],"scope":"Organization","note":"Every calling. Proposed changes live here until recorded in LCR.","help":["","","Class, quorum or zone","","","","","","","Sustain or release on","","","","Bishopric only",""]},
+  {"name":"People","section":"People","cols":[["ID","id"],["Name","text"],["Sort name","text"],["Gender","choice:M,F"],["Birth date","date"],["Phone","phone"],["Email","email"],["Parent phone","phone"],["Household","text"],["Spouse","person"],["Attends","choice:Yes,Sometimes,No,Unknown"],["Moved in","date"],["Don't ask to speak","bool"],["Don't text","bool"],["No birthday on program","bool"],["Notes","text"],["Source","choice:LCR,Manual,Moved out"],["Updated","date"]],"read":["admin","bishopric","clerk","leader","teacher"],"edit":["admin","bishopric","clerk"],"scope":null,"note":"Everyone in the ward, from LCR. Notes are bishopric-only. Leaders see adults and their own classes.","help":["","First Last","Last, First","","","","","Youth only","","","","","","","","Bishopric only","",""]},
+  {"name":"Callings","section":"People","cols":[["ID","id"],["Organization","org"],["Group","text"],["Calling","text"],["Person","person"],["Status","choice:Serving,Proposed,Extended,Sustained,Set apart,Release planned,Released,Open"],["Sustained","date"],["Set apart","date"],["Change","choice:,Call,Release,Call and release"],["Sunday","date"],["Extends","person"],["Sets apart","person"],["Recorded in LCR","date"],["Private notes","text"],["Source","choice:LCR,Hub"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin"],"scope":"Organization","note":"Every calling. Proposed changes live here until recorded in LCR.","help":["","","Class, quorum or zone","","","","","","","Sustain or release on","","","","Bishopric only",""]},
   {"name":"Groups","section":"People","cols":[["ID","id"],["Kind","choice:Class,Quorum,Zone,Text group,Dinner group,Cleaning,Flags,Other"],["Organization","org"],["Group","text"],["Person","person"],["Role","choice:Member,Leader,Teacher,Assistant"],["Period","text"],["Notes","text"]],"read":["admin","bishopric","clerk","leader","teacher"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"Class lists, elders quorum zones, text groups and other lists. One row per person in a group.","help":["","","","","","","e.g. 2027 Jan\u2013Jul; blank = always",""]},
   {"name":"Sundays","section":"Sunday","cols":[["Date","dateid"],["Type","choice:Regular,Fast & Testimony,General Conference,Stake Conference,Ward Conference,Primary Program,Christmas Program,Special Program,No meeting"],["Organizer","person"],["Conducting","person"],["Presiding","text"],["Stake visitor","text"],["High council","text"],["Stake business","bool"],["Organist","person"],["Chorister","person"],["Opening hymn","number"],["Sacrament hymn","number"],["Intermediate hymn","number"],["Closing hymn","number"],["Theme","text"],["Theme text","text"],["Picture","text"],["Published","datetime"],["Notes","text"]],"read":["admin","bishopric","clerk","music"],"edit":["admin","bishopric","music"],"scope":null,"note":"One row per Sunday. Speakers and prayers are on Participants.","help":["The Sunday","","","","","","","","","","","","","","Scripture or quote reference","","","",""]},
   {"name":"Participants","section":"Sunday","cols":[["ID","id"],["Date","date"],["Order","number"],["Role","choice:Invocation,Speaker,Youth speaker,High council,Musical number,Testimony,Benediction"],["Person","person"],["Topic","text"],["Minutes","number"],["Status","choice:Idea,Asked,Accepted,Declined,Done"],["Asked on","date"],["Answered on","date"],["Reminded","date"],["Thanked","date"],["Notes","text"]],"read":["admin","bishopric","clerk","music"],"edit":["admin","bishopric"],"scope":null,"note":"Everyone on a Sunday program. Speaker and prayer history comes from here.","help":["","The Sunday","","","","","","","","","","",""]},
@@ -17,8 +17,8 @@ var SCHEMA = {"tabs":[
   {"name":"Events","section":"Calendar","cols":[["ID","id"],["Date","date"],["End date","date"],["Start","time"],["End","time"],["Title","text"],["Organization","org"],["Place","text"],["Public","bool"],["Status","choice:Approved,Inbox,Skipped,Cancelled"],["Repeat","choice:,Weekly,Every other week,Monthly (same weekday)"],["Until","date"],["Skip","text"],["Source","text"],["Source ID","text"],["Notes","text"]],"read":["admin","bishopric","clerk","leader","teacher","member"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"One ward calendar. Linked calendars and scans land here.","help":["","","","","","","","","Shows on the public calendar","","","Last date it repeats","Dates it doesn't happen, comma separated","","",""]},
   {"name":"Building","section":"Calendar","cols":[["ID","id"],["Date","date"],["Start","time"],["End","time"],["Rooms","text"],["For","text"],["Contact","text"],["Phone","phone"],["Email","email"],["Kind","choice:Ward,Stake,Family,Other"],["Purpose","text"],["Status","choice:Requested,Approved,Declined,Cancelled"],["Requested on","datetime"],["Decided by","text"],["Notes","text"]],"read":["admin","bishopric","building"],"edit":["admin","building"],"scope":null,"note":"Building reservations and requests.","help":["","","","","","Organization or family","","","","","","","","",""]},
   {"name":"Teaching","section":"Teaching","cols":[["ID","id"],["Organization","org"],["Class","text"],["Date","date"],["Teacher","text"],["Lesson","text"],["Link","link"],["Summary","text"],["Reminded","date"]],"read":["admin","bishopric","clerk","leader","teacher"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"Who teaches what, each Sunday.","help":["","","","","","","","",""]},
-  {"name":"Meetings","section":"Leaders","cols":[["ID","id"],["Type","choice:Bishopric,Ward council,Youth council,PEC,Other"],["Date","date"],["Time","time"],["Status","choice:Planned,Held,Cancelled"],["Opening prayer","person"],["Spiritual thought","person"],["Closing prayer","person"],["Notes","text"],["Minutes sent","date"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric"],"scope":null,"note":"Meetings. Agenda items are on Agenda.","help":["","","","","","","","","",""]},
-  {"name":"Agenda","section":"Leaders","cols":[["ID","id"],["Meeting","ref:Meetings"],["Order","number"],["Item","text"],["Lead","text"],["Minutes","number"],["Notes","text"],["Decision","text"],["Source","text"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric"],"scope":null,"note":"Agenda items and minutes for each meeting.","help":["","","","","","","","",""]},
+  {"name":"Meetings","section":"Leaders","cols":[["ID","id"],["Type","choice:Bishopric,Ward council,Youth council,PEC,Other"],["Date","date"],["Time","time"],["Status","choice:Planned,Held,Cancelled"],["Opening prayer","person"],["Spiritual thought","person"],["Closing prayer","person"],["Notes","text"],["Minutes sent","date"]],"read":["admin","bishopric","clerk"],"edit":["admin","bishopric"],"scope":null,"note":"Meetings. Agenda items are on Agenda.","help":["","","","","","","","","",""]},
+  {"name":"Agenda","section":"Leaders","cols":[["ID","id"],["Meeting","ref:Meetings"],["Order","number"],["Item","text"],["Lead","text"],["Minutes","number"],["Notes","text"],["Decision","text"],["Source","text"]],"read":["admin","bishopric","clerk"],"edit":["admin","bishopric"],"scope":null,"note":"Agenda items and minutes for each meeting.","help":["","","","","","","","",""]},
   {"name":"Tasks","section":"Leaders","cols":[["ID","id"],["Task","text"],["Owner","text"],["Organization","org"],["Due","date"],["Status","choice:Not started,In progress,Waiting,Done"],["Source","text"],["Notes","text"],["Created","date"],["Done on","date"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric","clerk","leader"],"scope":"Organization","note":"Everyone's to-dos.","help":["","","Name or calling","","","","Meeting, Sunday or calling change","","",""]},
   {"name":"Appointments","section":"Leaders","cols":[["ID","id"],["Date","date"],["Time","time"],["Minutes","number"],["With","choice:Bishop,First counselor,Second counselor,Executive secretary,Clerk"],["Person","person"],["Purpose","text"],["Place","text"],["Status","choice:Open,Booked,Done,Cancelled,No-show"],["Source","text"],["Phone","phone"],["Notes","text"],["Calendar event","text"],["Reminded","date"]],"read":["admin"],"edit":["admin","bishopric"],"scope":null,"note":"Interviews and appointments. Booking pages show only open or taken, never who. Counselors see names only for their own.","help":["","","","","","","Hidden from everyone but the bishopric and Kevin","","","","","","",""]},
   {"name":"Training","section":"Leaders","cols":[["ID","id"],["Person","person"],["Calling","text"],["Course","text"],["Completed","date"],["Expires","date"],["Emailed 60","date"],["Texted 30","date"],["Texted 15","date"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin"],"scope":null,"note":"Youth protection training, from the LCR report.","help":["","","","Protecting Children and Youth","","","","","",""]},
@@ -190,18 +190,17 @@ function rolesFor_(name, override, orgsOverride) {
   rows_('Callings').forEach(function (c) {
     if (nkey_(c.Person) !== k || /Released|Proposed|Open/.test(c.Status)) return;
     callings.push(c.Calling);
-    var cal = String(c.Calling);
-    if (/^Bishop$/i.test(cal)) { roles.admin = 1; roles.bishopric = 1; }
-    else if (/Bishopric .*Counselor/i.test(cal)) roles.bishopric = 1;
-    else if (/Executive Secretary/i.test(cal) && c.Organization === 'Bishopric') { roles.admin = 1; roles.bishopric = 1; }
-    else if (/Ward Clerk|Assistant Clerk|Membership Clerk|Finance Clerk/i.test(cal) && c.Organization === 'Bishopric') { roles.clerk = 1; roles.bishopric = 1; }
+    var cal = String(c.Calling), fromLcr = c.Source !== 'Hub'; // bishopric-level access only from callings recorded in LCR
+    if (fromLcr && /^Bishop$/i.test(cal)) { roles.admin = 1; roles.bishopric = 1; }
+    else if (fromLcr && /Bishopric .*Counselor/i.test(cal)) roles.bishopric = 1;
+    else if (fromLcr && /Executive Secretary/i.test(cal) && c.Organization === 'Bishopric') { roles.admin = 1; roles.bishopric = 1; }
+    else if (fromLcr && /Ward Clerk|Assistant Clerk|Membership Clerk|Finance Clerk/i.test(cal) && c.Organization === 'Bishopric') { roles.clerk = 1; }
     if (/music|organist|chorister/i.test(cal)) roles.music = 1;
     if (/building|scheduler/i.test(cal)) roles.building = 1;
     if (c.Organization && c.Organization !== 'Stake' && LEAD_RX.test(cal)) { roles.leader = 1; orgs[c.Organization] = 1; }
   });
   rows_('Groups').forEach(function (g) {
-    if (nkey_(g.Person) === k && g.Role === 'Teacher') { roles.teacher = 1; orgs[g.Organization] = orgs[g.Organization] || 0; }
-    if (nkey_(g.Person) === k && g.Kind === 'Zone' && g.Role === 'Leader') { roles.leader = 1; }
+    if (nkey_(g.Person) === k && g.Role === 'Teacher' && (g.Kind === 'Class' || g.Kind === 'Quorum')) { roles.teacher = 1; orgs[g.Organization] = orgs[g.Organization] || 0; }
   });
   if (override) {
     String(override).split(/\s*,\s*/).forEach(function (r) { if (r) roles[r.toLowerCase()] = 1; });
@@ -250,10 +249,19 @@ function visible_(me, tabName) {
     if (tabName === 'Events') mine.Stake = mine.Youth = 1;
     rows = rows.filter(function (r) { return mine[r[d.scope]] || (tabName === 'Events' && r.Public === true); });
   }
-  if (tabName === 'People' && !bish && !me.roles.clerk && !me.roles.leader) {
-    var names = {}; myClasses_(me).forEach(function (g) { names[nkey_(g.Person)] = 1; });
-    rows = rows.filter(function (r) { return names[nkey_(r.Name)]; });
+  if (tabName === 'People' && !bish && !me.roles.clerk) {
+    // Leaders see adults (like the ward directory) and the youth and children in their own classes; teachers see only their class.
+    var names = {}, G = rows_('Groups');
+    if (me.roles.leader) G.forEach(function (g) { if (me.orgs.indexOf(g.Organization) >= 0 && (g.Kind === 'Class' || g.Kind === 'Quorum')) names[nkey_(g.Person)] = 1; });
+    myClasses_(me).forEach(function (g) { names[nkey_(g.Person)] = 1; });
+    rows = rows.filter(function (r) { var a = age_(r['Birth date']); return names[nkey_(r.Name)] || (me.roles.leader && a !== null && a >= 18); })
+      .map(function (r) { var o = Object.assign({}, r); o['Birth date'] = r['Birth date'] ? '1900' + String(r['Birth date']).slice(4) : ''; if (!names[nkey_(r.Name)]) o['Parent phone'] = ''; return o; });
   }
+  if (tabName === 'Groups' && !bish && !me.roles.clerk && !me.roles.leader) {
+    var mineG = {}; myClasses_(me).forEach(function (g) { mineG[g.ID] = 1; });
+    rows = rows.filter(function (r) { return mineG[r.ID]; });
+  }
+  if (tabName === 'Settings') rows = rows.map(function (r) { var o = Object.assign({}, r); if (SECRET_SETTINGS[r.Key] && r.Value) o.Value = '••••••'; return o; });
   if (tabName === 'Events' && !bish && !me.roles.leader) rows = rows.filter(function (r) { return r.Status === 'Approved'; });
   var hide = HIDDEN_COLS[tabName];
   return rows.map(function (r) {
@@ -282,9 +290,20 @@ function save_(me, tabName, row, opts) {
     var cur = null;
     if (row[idCol]) rows_(tabName).some(function (r) { if (String(r[idCol]) === String(row[idCol])) { cur = r; return true; } return false; });
     if (!opts.system && d.scope && !isBishopric_(me) && !me.roles.clerk) {
-      var org = row[d.scope] || (cur && cur[d.scope]);
-      var youthOk = tabName === 'Events' && org === 'Youth' && (me.orgs.indexOf('Young Women') >= 0 || me.orgs.indexOf('Young Men') >= 0);
-      if (me.orgs.indexOf(org) < 0 && !youthOk && !(tabName === 'Tasks')) throw new Error('That belongs to another organization.');
+      var okOrg = function (org) {
+        if (me.orgs.indexOf(org) >= 0) return true;
+        if (tabName === 'Events' && org === 'Youth' && (me.orgs.indexOf('Young Women') >= 0 || me.orgs.indexOf('Young Men') >= 0)) return true;
+        return false;
+      };
+      var newOrg = row[d.scope] || (cur && cur[d.scope]);
+      if (tabName === 'Tasks') {
+        var myk = nkey_(me.name), owns = cur && nkey_(cur.Owner).indexOf(myk) >= 0;
+        if (cur && !okOrg(cur[d.scope]) && !owns) throw new Error('That belongs to another organization.');
+        if (!okOrg(newOrg) && newOrg !== 'Ward' && !owns) throw new Error('That belongs to another organization.');
+      } else {
+        if (cur && !okOrg(cur[d.scope])) throw new Error('That belongs to another organization.');
+        if (!okOrg(newOrg)) throw new Error('That belongs to another organization.');
+      }
     }
     if (!cur && d.cols[0][1] === 'id' && !row[idCol]) row[idCol] = newId_(tabName);
     var hide = HIDDEN_COLS[tabName] || {};
@@ -358,7 +377,7 @@ var ACTIONS = {
     if (!email || cache.get('link:' + email)) return { sent: true };
     cache.put('link:' + email, '1', 900);
     var a = null; rows_('Access').some(function (r) { if (String(r.Email).toLowerCase() === email && r.Status !== 'Removed' && r.Status !== 'Paused') { a = r; return true; } return false; });
-    if (a && (!emailPaused_() || /admin/i.test(a.Role || ''))) { ensureKey_(a); sendLink_(a, req.app); }
+    if (a && (!emailPaused_() || /admin/i.test(a.Role || ''))) { ensureKey_(a); sendLink_(a); }
     return { sent: true };
   },
 
@@ -398,7 +417,7 @@ var ACTIONS = {
     if (!me.roles.admin) throw new Error('Only the executive secretary and bishop send links.');
     var a = null; rows_('Access').some(function (r) { if (r.ID === req.id) { a = r; return true; } return false; });
     if (!a) throw new Error('Not found');
-    if (req.renew) a.Key = '';
+    if (req.renew) { CacheService.getScriptCache().remove('who:' + a.Key); a.Key = ''; save_(null, 'Access', { ID: a.ID, Key: '' }, { system: true, quiet: true }); }
     ensureKey_(a);
     if (req.email !== false && !emailPaused_()) sendLink_(a, req.app);
     return { link: linkFor_(a, req.app) };
@@ -414,7 +433,12 @@ function ensureKey_(a) {
   save_(null, 'Access', { ID: a.ID, Key: key }, { system: true, quiet: true });
   a.Key = key; return key;
 }
-function appUrl_(app) { return String(app || setting_('app_url') || '').replace(/[#?].*$/, ''); }
+function appUrl_(app) {
+  var set = String(setting_('app_url') || '').replace(/[#?].*$/, '');
+  if (set) return set;
+  app = String(app || '').replace(/[#?].*$/, '');
+  return /^https:\/\/[a-z0-9-]+\.github\.io\//i.test(app) ? app : '';
+}
 function linkFor_(a, app) {
   var api = setting_('api_url') || ScriptApp.getService().getUrl();
   return appUrl_(app) + '#k=' + a.Key + '&api=' + encodeURIComponent(api);
@@ -751,6 +775,8 @@ ACTIONS.audiences = function (req, me) {
   G.filter(function (g) { return g.Kind === 'Text group' && (isBishopric_(me) || orgs.indexOf(g.Organization) >= 0); }).forEach(function (g) {
     var id = 's:' + g.Organization + ':' + g.Group, grp = groups.filter(function (x) { return x.id === id && x.org === g.Organization; })[0];
     var p = byName[nkey_(g.Person)]; if (!p) return;
+    var ag = age_(p['Birth date']);
+    if (ag !== null && ag < 18 && !G.some(function (x) { return x.Organization === g.Organization && (x.Kind === 'Class' || x.Kind === 'Quorum') && nkey_(x.Person) === nkey_(p.Name); })) return;
     if (!grp) { grp = { org: g.Organization, id: id, label: '★ ' + g.Group, members: [], saved: g.Group }; groups.push(grp); }
     grp.members.push(m(p));
   });
@@ -775,6 +801,7 @@ ACTIONS.saveTextGroup = function (req, me) {
 ACTIONS.dontText = function (req, me) {
   if (!(isBishopric_(me) || me.roles.leader)) throw new Error('Only leaders can change this.');
   var p = rows_('People').filter(function (x) { return x.Name === req.name; })[0]; if (!p) throw new Error('Not found');
+  if (!isBishopric_(me) && !ACTIONS.audiences({}, me).groups.some(function (g) { return g.members.some(function (m) { return m.n === p.Name; }); })) throw new Error('That person isn\'t in your organization.');
   save_(me, 'People', { ID: p.ID, "Don't text": !!req.on }, { system: true });
   return { ok: true };
 };
@@ -836,6 +863,7 @@ ACTIONS.duties = function (req, me) {
 ACTIONS.saveDuty = function (req, me) {
   if (!(isBishopric_(me) || me.orgs.indexOf('Elders Quorum') >= 0)) throw new Error('Only the elders quorum presidency changes zone turns.');
   var d = req.duty || {};
+  if (d.id && !rows_('Library').some(function (l) { return l.ID === d.id && l.Kind === 'Zone duty'; })) throw new Error('Not found');
   if (req.remove) { remove_(Object.assign({}, me, { roles: Object.assign({}, me.roles, { admin: 1 }) }), 'Library', d.id); return {}; }
   if (!String(d.name || '').trim()) throw new Error('Name the assignment.');
   var id = save_(me, 'Library', { ID: d.id || '', Kind: 'Zone duty', Title: String(d.name).slice(0, 40), Text: String(d.msg || '').slice(0, 400), Source: 'Elders Quorum',
@@ -1060,6 +1088,10 @@ ACTIONS.classSet = function (req, me) {
   var org = String(req.org || '');
   if (!(isBishopric_(me) || me.orgs.indexOf(org) >= 0)) throw new Error('Only this organization\'s presidency changes its classes.');
   var kind = org === 'Young Men' ? 'Quorum' : 'Class';
+  if (req.id) {
+    var cur = rows_('Groups').filter(function (g) { return g.ID === req.id; })[0];
+    if (!cur || cur.Organization !== org || (cur.Kind !== 'Class' && cur.Kind !== 'Quorum')) throw new Error('That isn\'t one of this organization\'s classes.');
+  }
   if (req.id && req.remove) { remove_(Object.assign({}, me, { roles: Object.assign({}, me.roles, { admin: 1 }) }), 'Groups', req.id); return {}; }
   var person = String(req.person || '').trim(), group = String(req.group || '').trim();
   if (!person || !group) throw new Error('Pick a person and a class.');
@@ -1077,6 +1109,9 @@ ACTIONS.changes = function (req, me) {
 ACTIONS.changeSave = function (req, me) {
   if (!isBishopric_(me)) throw new Error('Only the bishopric changes callings.');
   var r = req.row || {};
+  if (r.ID) { var c0 = rows_('Callings').filter(function (c) { return c.ID === r.ID; })[0]; if (!c0 || c0.Source !== 'Hub') throw new Error('Only calling changes made in the Hub can be edited here.'); r.Status = c0.Status; }
+  else r.Status = 'Proposed';
+  delete r['Recorded in LCR'];
   if (!r.Person || !r.Calling) throw new Error('Add the person and the calling.');
   r.Source = 'Hub'; if (!r.Status) r.Status = 'Proposed';
   var id = save_(me, 'Callings', r, { system: true });
@@ -1370,7 +1405,7 @@ ACTIONS.accessSave = function (req, me) {
 ACTIONS.linkFor = function (req, me) {
   needAdmin_(me);
   var a = rows_('Access').filter(function (x) { return x.ID === req.id; })[0]; if (!a) throw new Error('Not found');
-  if (req.renew) { save_(null, 'Access', { ID: a.ID, Key: '' }, { system: true, quiet: true }); a.Key = ''; clearWho_(); }
+  if (req.renew) { CacheService.getScriptCache().remove('who:' + a.Key); save_(null, 'Access', { ID: a.ID, Key: '' }, { system: true, quiet: true }); a.Key = ''; }
   ensureKey_(a);
   save_(null, 'Access', { ID: a.ID, 'Link sent': ymd_(today_()) }, { system: true, quiet: true });
   var link = linkFor_(a, req.app);
