@@ -33,17 +33,24 @@
     clerk: ['For LCR', 'People › Callings › For LCR lists each calling and release to record. Tap Recorded when it\'s in LCR.'],
     zones: ['Elders quorum zones', 'More › Elders quorum zones: change zone members and leaders. Add a turn (chairs, snow) and it rotates through the zones by itself, with a button to text this week\'s zone.'],
     teacher: ['Teaching', 'Today shows the lesson you teach next with its link. Messages lets you text your class (and their parents).'],
+    newsletter: ['Newsletter', 'More › Newsletter › New. Write the items (a blank line between each), turn on the calendar, then "Send from my email": copy the newsletter, copy the addresses into Bcc, and send.'],
+    permits: ['Permission forms', 'For a trip or overnight activity, turn on "Youth need permission forms" on the calendar item (or More › Permission forms › Add). Text the parents the form link, and tap each name as forms come in.'],
+    funerals: ['Funerals', 'More › Funerals › New puts it on the calendar, reserves the building and hands out the usual tasks. Fill in the program as the family decides, then Print the order of service.'],
+    ask: ['Ask the Hub', 'More › Ask the Hub answers quick questions ("When is the youth temple trip?") from the calendar and plans. It sends no phone numbers or private notes.'],
     privacy: ['Privacy', 'You only see your own organization. Bishopric notes, interview purposes and who booked appointments stay with the bishop and executive secretary. Please don\'t share your link.']
   };
   WH.routes.help = {
     view() {
       const r = (WH.S.boot && WH.S.boot.me.roles) || {}, { esc } = WH;
       let keys = ['install', 'today'];
-      if (r.admin) keys = keys.concat(['kevin', 'sunday', 'program', 'conduct', 'callings', 'links', 'lcr', 'msgs', 'youth']);
-      else if (r.bishopric) keys = keys.concat(['sunday', 'program', 'conduct', 'callings', 'msgs', 'youth']);
+      if (r.admin) keys = keys.concat(['kevin', 'sunday', 'program', 'conduct', 'callings', 'links', 'lcr', 'msgs', 'youth', 'funerals', 'ask']);
+      else if (r.bishopric) keys = keys.concat(['sunday', 'program', 'conduct', 'callings', 'msgs', 'youth', 'funerals', 'ask']);
       else if (r.clerk) keys = keys.concat(['clerk', 'lcr']);
       if (r.leader && !r.bishopric) keys = keys.concat(['msgs', 'youth', 'lessons', 'classes', 'cal', 'ann']);
       if ((WH.S.boot.me.orgs || []).indexOf('Elders Quorum') >= 0) keys.push('zones');
+      if (['Relief Society', 'Elders Quorum'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('newsletter');
+      if (['Young Women', 'Young Men', 'Primary'].some(o => (WH.S.boot.me.orgs || []).indexOf(o) >= 0)) keys.push('permits');
+      if (r.leader && !r.bishopric) keys.push('ask');
       if (r.teacher && !r.leader) keys = keys.concat(['teacher']);
       if (r.music && !r.bishopric) keys.push('program');
       keys.push('privacy');
