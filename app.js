@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.9.0';
+  const VERSION = '2.9.1';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {

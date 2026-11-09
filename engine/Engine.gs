@@ -24,7 +24,7 @@ var SCHEMA = {"tabs":[
   {"name":"Training","section":"Leaders","cols":[["ID","id"],["Person","person"],["Calling","text"],["Course","text"],["Completed","date"],["Expires","date"],["Emailed 60","date"],["Texted 30","date"],["Texted 15","date"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin"],"scope":null,"note":"Youth protection training, from the LCR report.","help":["","","","Protecting Children and Youth","","","","","",""]},
   {"name":"Recommends","section":"Leaders","cols":[["ID","id"],["Person","person"],["Type","text"],["Expires","date"],["Updated","date"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Temple recommend expirations. Bishopric only.","help":["","","","",""]},
   {"name":"Permissions","section":"Calendar","cols":[["ID","id"],["Event","text"],["Date","date"],["Title","text"],["Organization","org"],["Person","person"],["Received","bool"],["Received on","date"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Permission and medical release forms turned in for activities and trips. Leaders use it from the app.","help":["","Calendar item ID","","","","Youth or child","","",""]},
-  {"name":"Newsletters","section":"Leaders","cols":[["ID","id"],["Organization","org"],["Date","date"],["Subject","text"],["Intro","text"],["Items","text"],["Include calendar","bool"],["Status","choice:Draft,Sent"],["Sent on","date"],["Sent to","number"],["Notes","text"]],"read":["admin","bishopric","leader"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"Organization newsletters (Relief Society first).","help":["","","","","","One item per paragraph; a line starting with # is a heading","","","","",""]},
+  {"name":"Newsletters","section":"Leaders","cols":[["ID","id"],["Organization","org"],["Date","date"],["Subject","text"],["Intro","text"],["Items","text"],["Include calendar","bool"],["Attachment","link"],["Status","choice:Draft,Scheduled,Sending,Sent"],["Sent on","date"],["Sent to","number"],["Send plan","json"],["Notes","text"]],"read":["admin","bishopric","leader"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"Organization newsletters (Relief Society first).","help":["","","","","","A line starting with # is a heading; [lessons], [birthdays], [stake calendar], [ward calendar] and [new members] fill themselves in","","A link to the stake memo or a flyer","","","","Which addresses go on which day (made by the Hub)",""]},
   {"name":"Funerals","section":"Leaders","cols":[["ID","id"],["Name","text"],["Date","date"],["Time","time"],["Place","text"],["Viewing","text"],["Family contact","text"],["Family phone","phone"],["Presiding","text"],["Conducting","text"],["Organist","text"],["Chorister","text"],["Family prayer","text"],["Opening hymn","text"],["Invocation","text"],["Life sketch","text"],["Speakers","text"],["Musical numbers","text"],["Closing hymn","text"],["Benediction","text"],["Dedication of the grave","text"],["Burial","text"],["Luncheon","text"],["Status","choice:Planning,Held"],["Notes","text"]],"read":["admin","bishopric","clerk"],"edit":["admin","bishopric"],"scope":null,"note":"Funeral planning and the order of service.","help":["","Who passed away","","","","e.g. 9:30\u201310:30 AM, Relief Society room","","","","","","","","","","","One per line","One per line","","","","","","",""]},
   {"name":"Missionaries","section":"Leaders","cols":[["ID","id"],["Name","text"],["Title","choice:Elder,Sister,Couple"],["Mission","text"],["Email","email"],["Left","date"],["Home","date"],["On program","bool"],["Notes","text"]],"read":["admin","bishopric","clerk","member"],"edit":["admin","bishopric"],"scope":null,"note":"Missionaries serving from the ward.","help":["","","","","","","Expected","",""]},
   {"name":"Sources","section":"Engine","cols":[["ID","id"],["Organization","org"],["Kind","choice:Google Calendar,Google Sheet,Google Doc,iCal,Upload"],["Link","link"],["Goes to","choice:Events,Teaching,Groups,People,Announcements"],["Auto-approve","bool"],["Schedule","choice:Nightly,Weekly,Manual"],["Last read","datetime"],["Result","text"]],"read":["admin"],"edit":["admin"],"scope":null,"note":"Where each organization's calendar, lists and schedules come from.","help":["","","","","","","","",""]},
@@ -80,12 +80,12 @@ var SCHEMA = {"tabs":[
   ["api_url", "Engine", "Engine address (Deploy \u203a Web app URL)", "", "Filled in after the first deployment"],
   ["public_calendar", "Engine", "Show the public calendar", "Yes", ""]
 ]};
-var VERSION = '2.9.0';
+var VERSION = '2.9.1';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
   var p = (e && e.parameter) || {};
-  if (p.action === 'ics') return ContentService.createTextOutput(icsFeed_()).setMimeType(ContentService.MimeType.ICAL);
+  if (p.action === 'ics') return ContentService.createTextOutput(icsFeed_(p.orgs)).setMimeType(ContentService.MimeType.ICAL);
   if (p.action) return json_(handle_(p));
   return json_({ ok: true, app: 'Ward Hub', version: VERSION });
 }
@@ -995,10 +995,11 @@ ACTIONS.publicCalendar = function (req) {
   return { ward: setting_('ward_name'), events: occurrences_(null, from, to).map(function (e) { return { date: e.date, end: e.end, time: e.time, endTime: e.endTime, title: e.title, org: e.org, place: e.place }; }) };
 };
 /* Calendar feed for phones' calendar apps: …/exec?action=ics */
-function icsFeed_() {
-  var from = ymd_(addDays_(today_(), -30)), to = ymd_(addDays_(today_(), 180)), ev = /^no$/i.test(setting_('public_calendar') || 'Yes') ? [] : occurrences_(null, from, to);
+function icsFeed_(orgs) {
+  var want = String(orgs || '').split(',').map(function (o) { return o.trim(); }).filter(Boolean);
+  var from = ymd_(addDays_(today_(), -30)), to = ymd_(addDays_(today_(), 180)), ev = /^no$/i.test(setting_('public_calendar') || 'Yes') ? [] : occurrences_(null, from, to).filter(function (e) { return !want.length || want.indexOf(e.org) >= 0; });
   var esc = function (s) { return String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n'); };
-  var L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Ward Hub//EN', 'X-WR-CALNAME:' + esc(setting_('ward_name') || 'Ward') + ' calendar', 'X-WR-TIMEZONE:' + tz_()];
+  var L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Ward Hub//EN', 'X-WR-CALNAME:' + esc(setting_('ward_name') || 'Ward') + (want.length && want.length < 4 ? ' · ' + want.join(', ') : ' calendar'), 'X-WR-TIMEZONE:' + tz_()];
   ev.forEach(function (e, i) {
     var d = e.date.replace(/-/g, ''), t = timeKey_(e.time), t2 = e.endTime ? timeKey_(e.endTime) : '';
     L.push('BEGIN:VEVENT', 'UID:' + (e.id || 'x') + '-' + d + '@wardhub', 'DTSTAMP:' + Utilities.formatDate(new Date(), 'UTC', "yyyyMMdd'T'HHmmss'Z'"));
@@ -1445,12 +1446,13 @@ ACTIONS.health = function (req, me) {
   var counts = {}; SCHEMA.tabs.forEach(function (t) { try { counts[t.name] = rows_(t.name).length; } catch (e) { counts[t.name] = -1; } });
   return { version: VERSION, jobs: jobs, emailQuota: quota, paused: emailPaused_(), triggers: triggers, counts: counts, log: rows_('Log').slice(0, 25).map(strip_) };
 };
-ACTIONS.runJob = function (req, me) { needAdmin_(me); if (req.job === 'nightly') nightly(); if (req.job === 'sources') readSources_(); if (req.job === 'backup') jobRecord_('backup', function () { return backup_(true); }); return ACTIONS.health(req, me); };
+ACTIONS.runJob = function (req, me) { needAdmin_(me); if (req.job === 'nightly') nightly(); if (req.job === 'sources') readSources_(); if (req.job === 'newsletters') newsletterJob(); if (req.job === 'backup') jobRecord_('backup', function () { return backup_(true); }); return ACTIONS.health(req, me); };
 
 /* ---------- nightly jobs (installed by setUp) ---------- */
 function installJobs_() {
   var have = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
   if (have.indexOf('nightly') < 0) ScriptApp.newTrigger('nightly').timeBased().everyDays(1).atHour(3).create();
+  if (have.indexOf('newsletterJob') < 0) ScriptApp.newTrigger('newsletterJob').timeBased().everyDays(1).atHour(7).create();
 }
 function jobRecord_(name, fn) {
   var p = PropertiesService.getScriptProperties(), jobs = {}; try { jobs = JSON.parse(p.getProperty('JOBS') || '{}'); } catch (e) {}
@@ -1755,70 +1757,201 @@ function backup_(force) {
 }
 
 /* ---------- newsletters ---------- */
+/* Written once in the app. Lines like [lessons] or [birthdays] fill themselves in. Big lists go out in parts over the quietest days, so the ward account stays under Google's daily limit. */
+var NL_TOKENS = ['lessons', 'birthdays', 'birthdays next', 'stake calendar', 'ward calendar', 'new members'];
 function nlOrgs_(me) {
   var withGroup = {}; rows_('Groups').forEach(function (g) { if (/newsletter/i.test(g.Group)) withGroup[g.Organization] = 1; });
   var all = ['Relief Society', 'Elders Quorum'].concat(Object.keys(withGroup).filter(function (o) { return o !== 'Relief Society' && o !== 'Elders Quorum'; }));
   if (isBishopric_(me)) return ['Ward'].concat(all);
   return all.filter(function (o) { return me.orgs.indexOf(o) >= 0; });
 }
+function nlAdults_(org) {
+  return rows_('People').filter(function (p) { var a = age_(p['Birth date']); return p.Source !== 'Moved out' && a !== null && a >= 18 && (org === 'Ward' || org === 'Stake' || p.Gender === (org === 'Relief Society' ? 'F' : org === 'Elders Quorum' ? 'M' : '?')); });
+}
 function nlRecipients_(org) {
   var ppl = rows_('People').filter(function (p) { return p.Source !== 'Moved out'; }), by = {}; ppl.forEach(function (p) { by[nkey_(p.Name)] = p; });
-  var G = rows_('Groups').filter(function (g) { return g.Organization === org && /newsletter/i.test(g.Group); }), list;
-  if (G.length) list = G.map(function (g) { return by[nkey_(g.Person)]; }).filter(Boolean);
-  else if (org === 'Relief Society' || org === 'Elders Quorum' || org === 'Ward') list = ppl.filter(function (p) { var a = age_(p['Birth date']); return a !== null && a >= 18 && (org === 'Ward' || p.Gender === (org === 'Relief Society' ? 'F' : 'M')); });
-  else list = [];
+  var G = rows_('Groups').filter(function (g) { return g.Organization === org && /newsletter/i.test(g.Group); });
+  var list = G.length ? G.map(function (g) { return by[nkey_(g.Person)]; }).filter(Boolean) : nlAdults_(org);
   var seen = {};
   return list.filter(function (p) { var e = String(p.Email || '').trim().toLowerCase(); if (!/.+@.+\..+/.test(e) || seen[e]) return false; seen[e] = 1; return true; }).map(function (p) { return { n: p.Name, e: String(p.Email).trim() }; });
 }
-function nlHtml_(n) {
-  var body = '';
-  if (n.Intro) body += String(n.Intro).split(/\n\s*\n/).map(function (p) { return '<p>' + escH_(p).replace(/\n/g, '<br>') + '</p>'; }).join('');
-  String(n.Items || '').split(/\n\s*\n/).forEach(function (p) {
-    p = p.trim(); if (!p) return;
-    if (/^#\s*/.test(p)) { var lines = p.split('\n'); body += '<div style="font-size:17px;font-weight:600;margin:16px 0 4px;color:#1F2A44">' + escH_(lines[0].replace(/^#\s*/, '')) + '</div>'; if (lines.length > 1) body += '<p style="margin-top:0">' + escH_(lines.slice(1).join('\n')).replace(/\n/g, '<br>') + '</p>'; }
-    else body += '<p>' + escH_(p).replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>') + '</p>';
-  });
-  if (n['Include calendar'] === true) {
-    var from = n.Date || ymd_(today_()), to = ymd_(addDays_(parseYmd_(from), 45));
-    var ev = occurrences_({ roles: { admin: 1, bishopric: 1 }, orgs: [] }, from, to).filter(function (e) { return e.org === n.Organization || e.org === 'Ward' || e.org === 'Stake' || (n.Organization === 'Ward' && e.public); });
-    if (ev.length) body += '<div style="font-size:17px;font-weight:600;margin:16px 0 4px;color:#1F2A44">Coming up</div>' + li_(ev.slice(0, 25).map(function (e) { return '<b>' + fmtDay_(e.date) + '</b>' + (e.time ? ' · ' + escH_(e.time) : '') + ' · ' + escH_(e.title) + (e.place ? ' <span style="color:#8e8e93">· ' + escH_(e.place) + '</span>' : ''); }));
+function nlDate_(n) { return /^\d{4}-\d\d-\d\d$/.test(n.Date || '') ? n.Date : ymd_(today_()); }
+function nlMonth_(n, next) { var d = parseYmd_(nlDate_(n)); if (next) d = new Date(d.getFullYear(), d.getMonth() + 1, 1); return Utilities.formatDate(d, tz_(), 'MMMM'); }
+function nlLine_(t, sub) { return '<div style="margin:2px 0 8px">' + t + (sub ? '<div style="color:#6e6e73;font-size:14px">' + sub + '</div>' : '') + '</div>'; }
+function nlEvents_(list) { return list.length ? list.slice(0, 30).map(function (e) { return nlLine_('<b>' + fmtDay_(e.date) + '</b>' + (e.time ? ' · ' + escH_(e.time) + (e.endTime ? '–' + escH_(e.endTime) : '') : '') + ' · ' + escH_(e.title), escH_(e.place || '')); }).join('') : '<p style="color:#8e8e93">Nothing on the calendar yet.</p>'; }
+function nlBlock_(tok, n) {
+  var from = nlDate_(n), to = ymd_(addDays_(parseYmd_(from), 42)), sys = { roles: { admin: 1, bishopric: 1 }, orgs: [] };
+  if (tok === 'lessons') {
+    var start = ymd_(addDays_(parseYmd_(from), -6));
+    var L = rows_('Teaching').filter(function (r) { return r.Organization === n.Organization && r.Date >= start && r.Lesson; }).sort(function (a, b) { return a.Date.localeCompare(b.Date); }).slice(0, 6);
+    return L.length ? L.map(function (r) { return nlLine_('<b>' + Utilities.formatDate(parseYmd_(r.Date), tz_(), 'MMM d') + ':</b> ' + escH_(r.Lesson), escH_(r.Summary || '')); }).join('') : '<p style="color:#8e8e93">Lessons coming soon.</p>';
   }
-  var from_ = setting_('newsletter_from') || (n.Organization === 'Ward' ? 'The bishopric' : 'Your ' + n.Organization + ' presidency');
-  body += '<p style="margin-top:18px">' + escH_(from_) + '</p>';
-  return mailWrap_(n.Subject || (n.Organization + ' newsletter'), body);
+  if (tok === 'birthdays' || tok === 'birthdays next') {
+    var d0 = parseYmd_(from), m = tok === 'birthdays next' ? (d0.getMonth() + 1) % 12 : d0.getMonth();
+    var B = nlAdults_(n.Organization).filter(function (p) { return p['Birth date'] && p['No birthday on program'] !== true && +String(p['Birth date']).slice(5, 7) === m + 1; })
+      .sort(function (a, b) { return String(a['Birth date']).slice(8).localeCompare(String(b['Birth date']).slice(8)) || a.Name.localeCompare(b.Name); });
+    var mn = Utilities.formatDate(new Date(2000, m, 1), tz_(), 'MMMM');
+    return B.length ? B.map(function (p) { return nlLine_(mn + ' ' + (+String(p['Birth date']).slice(8, 10)) + ' - ' + escH_(p.Name)); }).join('') : '';
+  }
+  if (tok === 'stake calendar') {
+    var h = nlEvents_(occurrences_(sys, from, to).filter(function (e) { return e.org === 'Stake'; }));
+    if (n.Attachment) h += '<p><a href="' + escH_(n.Attachment) + '" style="color:#1F2A44;font-weight:600">Open the stake memo</a></p>';
+    return h;
+  }
+  if (tok === 'ward calendar') return nlEvents_(occurrences_(sys, from, to).filter(function (e) { return n.Organization === 'Ward' ? e.public : (e.org === n.Organization || ((e.org === 'Ward' || e.org === 'Activities') && e.public)); }));
+  if (tok === 'new members') {
+    var since = ymd_(addDays_(parseYmd_(from), -60));
+    var N = nlAdults_(n.Organization).filter(function (p) { return p['Moved in'] && p['Moved in'] >= since; });
+    return N.length ? '<p>Please welcome ' + N.map(function (p) { return escH_(p.Name); }).join(', ') + '.</p>' : '';
+  }
+  return '';
+}
+/* Line by line: "# Heading", a [token] alone on its line, or text (blank lines between paragraphs). {month} is the newsletter's month. */
+function nlHtml_(n) {
+  var out = '', para = [], month = nlMonth_(n), next = nlMonth_(n, true);
+  var flush = function () { if (para.length) out += '<p>' + para.join('<br>') + '</p>'; para = []; };
+  var fill = function (s) { return String(s).replace(/\{month\}/gi, month).replace(/\{next month\}/gi, next); };
+  var link = function (s) { return escH_(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>').replace(/(^|\s)(www\.[^\s<]+|[a-z0-9-]+\.(?:org|com)(?:\/[^\s<]*)?)(?=\s|$|[.,])/gi, '$1<a href="https://$2">$2</a>'); };
+  var used = {};
+  (fill(n.Intro || '') + '\n\n' + fill(n.Items || '')).split('\n').forEach(function (line) {
+    var t = line.trim(), tok = t.match(/^\[([a-z ]+)\]$/i);
+    if (!t) { flush(); return; }
+    if (tok && NL_TOKENS.indexOf(tok[1].toLowerCase()) >= 0) { flush(); used[tok[1].toLowerCase()] = 1; out += nlBlock_(tok[1].toLowerCase(), n); return; }
+    if (/^#\s*/.test(t)) { flush(); out += '<div style="font-size:17px;font-weight:700;margin:18px 0 6px;color:#1F2A44">' + escH_(t.replace(/^#\s*/, '')) + '</div>'; return; }
+    para.push(link(t));
+  });
+  flush();
+  if (n['Include calendar'] === true && !used['ward calendar']) out += '<div style="font-size:17px;font-weight:700;margin:18px 0 6px;color:#1F2A44">Coming up</div>' + nlBlock_('ward calendar', n);
+  if (n.Attachment && !used['stake calendar']) out += '<p><a href="' + escH_(n.Attachment) + '" style="color:#1F2A44;font-weight:600">Open the attachment</a></p>';
+  return mailWrap_(n.Subject || (n.Organization + ' newsletter'), out);
+}
+function nlTemplate_(org, me) {
+  var name = me.name || '';
+  if (org === 'Elders Quorum') return { Subject: 'Elders Quorum Weekend Update', Intro: 'Hello elders, time for another weekend update!',
+    Items: '# Announcements\n(Type this week\'s announcements here.)\n\n# EQ Lesson Schedule\n[lessons]\n\n# {month} Birthdays\n[birthdays]\n\n# New in the ward\n[new members]\n\n# Stake calendar\n[stake calendar]\n\n# Super High Quality Jokes* (*actual quality may vary)\n(Add your jokes.)\n\nHave a great week!\n' + name, 'Include calendar': false };
+  if (org === 'Relief Society') return { Subject: 'Relief Society News', Intro: 'Dear sisters,',
+    Items: '# Announcements\n(Type this week\'s announcements here.)\n\n# Lessons\n[lessons]\n\n# {month} Birthdays\n[birthdays]\n\n# Please welcome\n[new members]\n\n# Coming up\n[ward calendar]\n\n# Stake\n[stake calendar]\n\nWith love,\n' + name, 'Include calendar': false };
+  return { Subject: (setting_('ward_name') || 'Ward') + ' News', Intro: 'Dear friends,', Items: '# Coming up\n[ward calendar]\n\n# Stake\n[stake calendar]\n\n' + name, 'Include calendar': false };
 }
 function nlGet_(me, id) {
   var n = rows_('Newsletters').filter(function (x) { return x.ID === id; })[0];
   if (!n || nlOrgs_(me).indexOf(n.Organization) < 0) throw new Error('Not found');
   return n;
 }
+function nlPlan_(n) { try { return JSON.parse(n['Send plan'] || '[]'); } catch (e) { return []; } }
+
+/* How busy each of the next days is for the ward account: the weekly emails that fall on it, newsletters already planned, and what history shows. */
+function mailLoad_(dates, skipId) {
+  var load = {}, tY = ymd_(today_()); dates.forEach(function (d) { load[d] = 0; });
+  var A = activeAccess_(), bish = 0, clerks = 0;
+  A.forEach(function (a) { var m = meFor_(a); if (isBishopric_(m)) bish++; if (m.roles.clerk) clerks++; });
+  var hist = [0, 0, 0, 0, 0, 0, 0], since = ymd_(addDays_(today_(), -56));
+  rows_('Log').forEach(function (l) { var w = String(l.When || '').slice(0, 10); if (l.Action === 'email' && w >= since && w < tY) hist[parseYmd_(w).getDay()] += 1 / 8; });
+  dates.forEach(function (d) {
+    var dd = parseYmd_(d), w = dd.getDay(), exp = 0;
+    if (w === 1) exp += (on_('email_digest') ? bish : 0) + (on_('email_clerk') ? clerks : 0);
+    if (w === 3 && on_('email_lessons')) exp += rows_('Teaching').filter(function (r) { return r.Date === ymd_(nextSunday_(dd)); }).length;
+    if (on_('email_appts')) exp += rows_('Appointments').filter(function (a) { return a.Date === ymd_(addDays_(dd, 1)) && a.Status === 'Booked'; }).length;
+    load[d] = Math.max(exp, Math.round(hist[w])) + 3;
+  });
+  rows_('Newsletters').forEach(function (n) { if (n.ID === skipId || !/Scheduled|Sending/.test(n.Status)) return; nlPlan_(n).forEach(function (b) { if (!b.sent && load[b.date] != null) load[b.date] += b.to.length + Math.ceil(b.to.length / 49); }); });
+  return load;
+}
+/* The two (or more, for a long list) quietest days in the coming week, never Sunday. */
+function nlPlanFor_(n, emails) {
+  var cap = Math.min(100, +setting_('email_daily_cap') || 90), dates = [];
+  for (var i = 1; dates.length < 7; i++) { var d = addDays_(today_(), i); if (d.getDay() !== 0) dates.push(ymd_(d)); }
+  var load = mailLoad_(dates, n.ID), free = function (d) { return Math.max(0, cap - load[d]); };
+  var order = dates.slice().sort(function (a, b) { return load[a] - load[b] || a.localeCompare(b); }), pick = [], room = 0;
+  for (var k = 0; k < order.length && (pick.length < 2 || room < emails.length); k++) { pick.push(order[k]); room += free(order[k]) - Math.ceil(free(order[k]) / 50); }
+  pick.sort();
+  var plan = [], left = emails.slice();
+  pick.forEach(function (d, j) {
+    var share = Math.ceil(left.length / (pick.length - j)), fit = free(d) - Math.ceil(free(d) / 50);
+    plan.push({ date: d, to: left.splice(0, Math.max(0, Math.min(share, fit))), sent: '' });
+  });
+  if (left.length) plan[plan.length - 1].to = plan[plan.length - 1].to.concat(left);
+  return { plan: plan.filter(function (b) { return b.to.length; }), load: load, cap: cap };
+}
 ACTIONS.newsletters = function (req, me) {
   var orgs = nlOrgs_(me); if (!orgs.length) throw new Error('Newsletters are for the Relief Society and elders quorum presidencies and the bishopric.');
-  var list = rows_('Newsletters').filter(function (n) { return orgs.indexOf(n.Organization) >= 0; }).map(strip_).sort(function (a, b) { return String(b.Date).localeCompare(String(a.Date)); }).slice(0, 40);
-  return { orgs: orgs.map(function (o) { return { org: o, count: nlRecipients_(o).length, group: rows_('Groups').some(function (g) { return g.Organization === o && /newsletter/i.test(g.Group); }) }; }), list: list, paused: emailPaused_() };
+  var list = rows_('Newsletters').filter(function (n) { return orgs.indexOf(n.Organization) >= 0; }).map(function (n) { var o = strip_(n); delete o['Send plan']; return o; }).sort(function (a, b) { return String(b.Date).localeCompare(String(a.Date)); }).slice(0, 40);
+  return { orgs: orgs.map(function (o) { return { org: o, count: nlRecipients_(o).length, group: rows_('Groups').some(function (g) { return g.Organization === o && /newsletter/i.test(g.Group); }) }; }), list: list, paused: emailPaused_(), tokens: NL_TOKENS };
 };
+ACTIONS.newsletterTemplate = function (req, me) { if (nlOrgs_(me).indexOf(req.org) < 0) throw new Error('Pick your organization.'); return { row: Object.assign({ Organization: req.org, Date: ymd_(today_()) }, nlTemplate_(req.org, me)) }; };
 ACTIONS.newsletterSave = function (req, me) {
   var r = req.row || {}; if (nlOrgs_(me).indexOf(r.Organization) < 0) throw new Error('Pick your organization.');
-  if (r.ID) nlGet_(me, r.ID);
-  var row = { Organization: r.Organization, Date: r.Date || ymd_(today_()), Subject: String(r.Subject || '').slice(0, 150), Intro: String(r.Intro || '').slice(0, 4000), Items: String(r.Items || '').slice(0, 20000), 'Include calendar': r['Include calendar'] === true, Status: r.Status || 'Draft' };
+  var cur = r.ID ? nlGet_(me, r.ID) : null;
+  if (cur && /Scheduled|Sending/.test(cur.Status)) throw new Error('Cancel the schedule before changing it.');
+  var att = String(r.Attachment || '').trim(); if (att && !/^https:\/\//i.test(att)) throw new Error('The attachment needs to be a link that starts with https://');
+  var row = { Organization: r.Organization, Date: r.Date || ymd_(today_()), Subject: String(r.Subject || '').slice(0, 150), Intro: String(r.Intro || '').slice(0, 4000), Items: String(r.Items || '').slice(0, 20000), 'Include calendar': r['Include calendar'] === true, Attachment: att, Status: cur && cur.Status === 'Sent' ? 'Sent' : 'Draft' };
   if (r.ID) row.ID = r.ID;
   return { id: save_(me, 'Newsletters', row, { system: true }) };
 };
 ACTIONS.newsletterView = function (req, me) {
-  var n = nlGet_(me, req.id);
-  return { html: nlHtml_(n), subject: n.Subject, emails: nlRecipients_(n.Organization).map(function (x) { return x.e; }), paused: emailPaused_() };
+  var n = nlGet_(me, req.id), emails = nlRecipients_(n.Organization).map(function (x) { return x.e; }), sched = /Scheduled|Sending/.test(n.Status);
+  var p = sched ? { plan: nlPlan_(n) } : nlPlanFor_(n, emails);
+  return { html: nlHtml_(n), subject: n.Subject, emails: emails, paused: emailPaused_(), status: n.Status || 'Draft',
+    plan: p.plan.map(function (b) { return { date: b.date, count: b.to.length, sent: b.sent || '', load: p.load ? p.load[b.date] : null }; }) };
 };
-ACTIONS.newsletterRemove = function (req, me) { nlGet_(me, req.id); return { removed: remove_(me, 'Newsletters', req.id) }; };
-ACTIONS.newsletterMarkSent = function (req, me) { var n = nlGet_(me, req.id); save_(me, 'Newsletters', { ID: n.ID, Status: 'Sent', 'Sent on': ymd_(today_()), 'Sent to': +req.count || '' }, { system: true }); return {}; };
-/* From the ward account, in batches of blind copies. Google's free limit counts every address, so big lists usually go from the leader's own email. */
+ACTIONS.newsletterRemove = function (req, me) { var n = nlGet_(me, req.id); if (/Scheduled|Sending/.test(n.Status)) throw new Error('Cancel the schedule first.'); return { removed: remove_(me, 'Newsletters', req.id) }; };
+ACTIONS.newsletterMarkSent = function (req, me) { var n = nlGet_(me, req.id); if (/Scheduled|Sending/.test(n.Status)) throw new Error('Cancel the schedule first.'); save_(me, 'Newsletters', { ID: n.ID, Status: 'Sent', 'Sent on': ymd_(today_()), 'Sent to': +req.count || '' }, { system: true }); return {}; };
+/* Plan the parts now; the 7 AM job sends each part on its day. */
+ACTIONS.newsletterSchedule = function (req, me) {
+  var n = nlGet_(me, req.id);
+  if (emailPaused_()) throw new Error('Emails are paused. Use "Send from my email" for now.');
+  if (n.Status !== 'Draft' && n.Status) throw new Error('This one is already ' + String(n.Status).toLowerCase() + '.');
+  var emails = nlRecipients_(n.Organization).map(function (x) { return x.e; }); if (!emails.length) throw new Error('No one on the list has an email address.');
+  var p = nlPlanFor_(n, emails);
+  p.plan.forEach(function (b) { b.replyTo = me.email || ''; b.by = me.name; });
+  save_(me, 'Newsletters', { ID: n.ID, Status: 'Scheduled', 'Send plan': JSON.stringify(p.plan) }, { system: true });
+  installJobs_();
+  return { plan: p.plan.map(function (b) { return { date: b.date, count: b.to.length }; }) };
+};
+ACTIONS.newsletterCancel = function (req, me) {
+  var n = nlGet_(me, req.id); if (!/Scheduled|Sending/.test(n.Status)) return {};
+  var sent = nlPlan_(n).filter(function (b) { return b.sent; }), cnt = sent.reduce(function (s, b) { return s + b.to.length; }, 0);
+  save_(me, 'Newsletters', { ID: n.ID, Status: cnt ? 'Sent' : 'Draft', 'Send plan': cnt ? JSON.stringify(sent) : '', 'Sent to': cnt || '', Notes: cnt ? 'Stopped after ' + cnt + ' of the list' : '' }, { system: true });
+  return { sent: cnt };
+};
+function nlSendBatch_(n, b) {
+  var html = nlHtml_(n), wn = String(setting_('ward_name') || 'Ward').replace(/\s+Ward$/i, ''), name = wn + ' Ward' + (n.Organization === 'Ward' ? '' : ' ' + n.Organization);
+  var self = ''; try { self = Session.getEffectiveUser().getEmail(); } catch (e) {}
+  for (var i = 0; i < b.to.length; i += 49) MailApp.sendEmail({ to: self || b.replyTo || b.to[i], bcc: b.to.slice(i, i + 49).join(','), subject: n.Subject || 'Newsletter', htmlBody: html, name: name, replyTo: b.replyTo || '' });
+  var p = PropertiesService.getScriptProperties(), cnt = {}; try { cnt = JSON.parse(p.getProperty('MAILCOUNT') || '{}'); } catch (e) {}
+  if (cnt.d !== ymd_(today_())) cnt = { d: ymd_(today_()), n: 0 };
+  cnt.n += b.to.length; p.setProperty('MAILCOUNT', JSON.stringify(cnt));
+}
+/* Daily at 7 AM: send each part whose day has come, if Google's allowance has room; otherwise it waits a day. */
+function newsletterJob() {
+  jobRecord_('newsletters', function () {
+    if (emailPaused_()) return 'paused';
+    var tY = ymd_(today_()), done = 0, waiting = 0;
+    rows_('Newsletters').filter(function (n) { return /Scheduled|Sending/.test(n.Status); }).forEach(function (n) {
+      var plan = nlPlan_(n), changed = false;
+      plan.forEach(function (b) {
+        if (b.sent || b.date > tY) return;
+        var left = 0; try { left = MailApp.getRemainingDailyQuota(); } catch (e) {}
+        if (left < b.to.length + Math.ceil(b.to.length / 49) + 5) { waiting++; b.date = ymd_(addDays_(today_(), 1)); changed = true; return; }
+        nlSendBatch_(n, b); b.sent = Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm"); done += b.to.length; changed = true;
+        log_('Hub', 'newsletter', 'Newsletters', n.ID, b.to.length + ' addresses');
+      });
+      if (!changed) return;
+      var all = plan.every(function (b) { return b.sent; }), total = plan.reduce(function (s, b) { return s + (b.sent ? b.to.length : 0); }, 0);
+      save_(null, 'Newsletters', { ID: n.ID, 'Send plan': JSON.stringify(plan), Status: all ? 'Sent' : 'Sending', 'Sent on': all ? tY : '', 'Sent to': total }, { system: true, quiet: true });
+    });
+    return done + ' sent' + (waiting ? ' · ' + waiting + ' parts moved to tomorrow' : '');
+  });
+}
+/* Right away, for a list small enough to fit in today's allowance. */
 ACTIONS.newsletterSend = function (req, me) {
   var n = nlGet_(me, req.id);
   if (emailPaused_()) throw new Error('Emails are paused. Use "Send from my email" for now.');
+  if (n.Status && n.Status !== 'Draft') throw new Error('This one is already ' + String(n.Status).toLowerCase() + '.');
   var to = nlRecipients_(n.Organization).map(function (x) { return x.e; }); if (!to.length) throw new Error('No one on the list has an email address.');
   var left = 0; try { left = MailApp.getRemainingDailyQuota(); } catch (e) {}
-  if (left < to.length + 1) throw new Error('Google allows ' + left + ' more addresses today and this list has ' + to.length + '. Use "Send from my email" instead.');
-  var html = nlHtml_(n), wn = String(setting_('ward_name') || 'Ward').replace(/\s+Ward$/i, ''), name = wn + ' Ward' + (n.Organization === 'Ward' ? '' : ' ' + n.Organization);
-  for (var i = 0; i < to.length; i += 45) MailApp.sendEmail({ to: me.email || to[0], bcc: to.slice(i, i + 45).join(','), subject: n.Subject || 'Newsletter', htmlBody: html, name: name, replyTo: me.email || '' });
+  if (left < to.length + Math.ceil(to.length / 49) + 10) throw new Error('Google allows ' + left + ' more addresses today and this list has ' + to.length + '. Schedule it over two days instead.');
+  nlSendBatch_(n, { to: to, replyTo: me.email || '' });
   save_(me, 'Newsletters', { ID: n.ID, Status: 'Sent', 'Sent on': ymd_(today_()), 'Sent to': to.length }, { system: true });
   return { sent: to.length };
 };
