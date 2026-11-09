@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Need a Substitute</title><meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.12.0">
+</head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Need a substitute?</h1></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.12.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api, q=new URLSearchParams(location.search), c=q.get('c')||'', o=q.get('o')||'';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const pd=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  const post=x=>fetch(api,{method:'POST',body:JSON.stringify(x)}).then(r=>r.json());
+  const top='<div class="largetitle"><h1>Need a substitute?</h1></div>';
+  let d; try{ d=await post({action:'subInfo',c,o}); }catch(e){ d={ok:false,error:'Couldn\'t load. Please try again.'}; }
+  if(d.off){ m.innerHTML=top+'<div class="list"><div class="empty">Online requests are turned off. Please text your presidency.</div></div>'; return; }
+  if(!d.ok){ m.innerHTML=top+'<div class="list"><div class="empty">'+esc(d.error||'Something went wrong.')+'</div></div>'; return; }
+  let pick=d.sundays[0].date;
+  const draw=()=>{
+    m.innerHTML=top+'<p class="subtitle">'+esc(d.cls)+' · '+esc(d.org)+'</p>'+
+      '<div class="section-h"><span>Which Sunday?</span></div><div class="list">'+d.sundays.map(s=>'<button class="row" data-d="'+s.date+'"><span class="check '+(s.date===pick?'on':'')+'"></span><div class="main"><div class="t">'+esc(pd(s.date).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}))+'</div>'+(s.lesson?'<div class="s">'+esc(s.lesson)+'</div>':'')+'</div></button>').join('')+'</div>'+
+      '<div class="list" style="margin-top:14px"><div class="field"><label>Your name</label><input id="n" autocomplete="name" style="color:var(--text)"></div><div class="field"><label>Phone</label><input id="p" type="tel" autocomplete="tel" style="color:var(--text)" placeholder="So they can reach you"></div><div class="field col"><label>Anything they should know? (optional)</label><textarea id="x" placeholder="e.g. I have the lesson ready to share"></textarea></div></div>'+
+      '<input id="w" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">'+
+      '<div class="btns"><button class="btn" id="go">Ask my presidency</button></div><p id="e" class="foot" style="text-align:center"></p>'+
+      '<p class="foot">Your presidency sees this on their list right away and finds someone. If you find a substitute yourself, please text them.</p>';
+    m.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ const keep={n:document.getElementById('n').value,p:document.getElementById('p').value,x:document.getElementById('x').value}; pick=b.dataset.d; draw(); document.getElementById('n').value=keep.n; document.getElementById('p').value=keep.p; document.getElementById('x').value=keep.x; });
+    document.getElementById('go').onclick=async()=>{
+      const v=id=>document.getElementById(id).value, b=document.getElementById('go'), e=document.getElementById('e');
+      if(v('n').trim().length<3){ e.textContent='Please type your name.'; return; }
+      b.disabled=true; b.innerHTML='<span class="spin"></span>';
+      const r=await post({action:'subRequest',c:d.cls,o:d.org,date:pick,name:v('n'),phone:v('p'),note:v('x'),website:v('w')}).catch(()=>({ok:false,error:'Couldn\'t send. Please try again.'}));
+      if(r.ok) m.innerHTML='<div class="welcome" style="min-height:70vh"><h1>Thank you</h1><p>Your presidency knows you need a substitute for '+esc(d.cls)+' on '+esc(pd(pick).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}))+'.</p><p>They\'ll let you know who will teach.</p></div>';
+      else { b.disabled=false; b.textContent='Ask my presidency'; e.textContent=r.error||'Couldn\'t send.'; }
+    };
+  };
+  draw();
+})();
+</script></body></html>
