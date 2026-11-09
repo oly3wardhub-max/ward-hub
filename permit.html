@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Permission Form</title><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.11.0">
+<style>
+.field input,.field select{color:var(--text)}
+.field.col input{text-align:left;padding:4px 0}
+.field.yn label{flex:1;width:auto}
+.field.yn .seg{flex:none;width:132px}
+.field.yn .seg button{font-size:15px;padding:7px 4px}
+.field textarea{min-height:60px}
+.okrow{align-items:flex-start;cursor:pointer}.okrow .check{margin-top:1px}.okrow .t{font-size:16px;white-space:normal;line-height:1.35}
+.note{background:var(--accent-tint);color:var(--text);border-radius:12px;padding:12px 16px;font-size:15px;margin-top:14px}
+#err{color:var(--red);text-align:center;font-size:15px;margin:12px 16px 0;min-height:1em}
+</style>
+</head><body><main class="screen" id="m" style="padding-bottom:40px"><div class="largetitle"><h1>Permission form</h1></div><div class="skeleton"></div></main>
+<script src="config.js?v=2.11.0"></script>
+<script>
+(async function(){
+  const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api, t=new URLSearchParams(location.search).get('t')||'';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json());
+  const pd=s=>{const p=String(s).split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  const day=(s,o)=>pd(s).toLocaleDateString(undefined,o||{weekday:'long',month:'long',day:'numeric'});
+  const $=id=>document.getElementById(id);
+  const stop=msg=>{ m.innerHTML='<div class="largetitle"><h1>Permission form</h1></div><div class="list"><div class="empty">'+esc(msg)+'</div></div>'; };
+  if(!t) return stop('This link isn\'t complete. Please open the whole link from the text the leaders sent you.');
+  let d; try{ d=await post({action:'permitInfo',t}); }catch(e){ return stop('Couldn\'t load the form. Check your connection and try again.'); }
+  if(!d.ok) return stop(d.error||'This link isn\'t recognized. Please ask the youth leaders for a new one.');
+
+  const when=day(d.date)+(d.end&&d.end!==d.date?' to '+day(d.end):'')+(d.time?' · '+d.time+(d.endTime?' to '+d.endTime:''):'');
+  const F=(id,label,type,extra)=>'<div class="field"><label for="'+id+'">'+esc(label)+'</label><input id="'+id+'" type="'+(type||'text')+'" '+(extra||'')+'></div>';
+  const C=(id,label,extra)=>'<div class="field col"><label for="'+id+'">'+esc(label)+'</label><textarea id="'+id+'" '+(extra||'')+'></textarea></div>';
+  const YN=(id,q,more,ph)=>'<div class="field yn"><label>'+esc(q)+'</label><div class="seg" data-yn="'+id+'" role="radiogroup" aria-label="'+esc(q)+'"><button type="button" data-v="Yes" role="radio">Yes</button><button type="button" data-v="No" role="radio">No</button></div></div>'+
+    (more?'<div class="field col" id="'+id+'W" hidden><label for="'+id+'X">'+esc(more)+'</label><textarea id="'+id+'X" placeholder="'+esc(ph||'')+'"></textarea></div>':'');
+  const first=esc(d.first);
+  m.innerHTML='<div class="largetitle"><h1>Permission form</h1></div><p class="subtitle">'+esc([d.ward,d.org].filter(Boolean).join(' · '))+'</p>'+
+    '<div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">'+esc(d.title)+'</div><div class="s">'+esc(when)+(d.place?'<br>'+esc(d.place):'')+'</div></div></div>'+
+    '<div class="row"><div class="main"><div class="t">For '+first+'</div><div class="s">Parent or guardian permission and medical release</div></div></div></div>'+
+    (d.signed?'<div class="note">This form was signed online on '+esc(day(d.signed,{month:'long',day:'numeric'}))+'. Sending it again replaces the earlier one.</div>':'')+
+    '<p class="foot">It takes about three minutes. Only this activity\'s leaders can open it.</p>'+
+    '<div class="section-h"><span>'+first+'</span></div><div class="list">'+F('birth','Birth date','date','max="'+esc(d.today)+'"')+'</div>'+
+    '<div class="section-h"><span>Parent or guardian</span></div><div class="list">'+F('parent','Your name','text','autocomplete="name"')+F('rel','Relationship','text','placeholder="Mother, father, guardian"')+
+      F('phone','Phone','tel','autocomplete="tel"')+F('phone2','Other phone','tel','placeholder="Optional"')+F('email','Email','email','autocomplete="email" placeholder="Optional"')+'</div>'+
+    '<div class="section-h"><span>Emergency contact</span></div><div class="list">'+F('ecName','Name','text','placeholder="If we can\'t reach you"')+F('ecRel','Relationship','text','placeholder="Grandparent, neighbor"')+F('ecPhone','Phone','tel')+'</div>'+
+    '<div class="section-h"><span>Health</span></div><div class="list">'+
+      YN('diet','Special diet?','What should '+d.first+' eat or avoid?')+YN('alg','Allergies?','Which allergies, and what happens?','Foods, medicines, insects, plants…')+
+      C('meds','Medicines, prescription or over the counter (leave blank if none)','placeholder="Name, dose and when"')+
+      YN('self','Can '+d.first+' take them without help?').replace('<div class="field yn"','<div class="field yn" id="selfQ" hidden')+
+      YN('chr','Chronic or recurring illness?','Please explain','Asthma, diabetes, seizures…')+YN('sur','Surgery or serious illness in the past year?','Please explain')+
+      C('limits','Anything that limits what '+d.first+' can do (blank if none)')+C('other','Anything else the leaders should know (blank if none)')+'</div>'+
+    '<div class="section-h"><span>Permission</span></div><div class="list">'+(d.oks||[]).map(o=>'<div class="row okrow" role="checkbox" aria-checked="false" tabindex="0" data-ok="'+esc(o[0])+'"><span class="check"></span><div class="main"><div class="t">'+esc(o[1])+'</div></div></div>').join('')+'</div>'+
+    '<div class="section-h"><span>Sign</span></div><div class="list">'+F('signed','Your full name','text','autocomplete="name" placeholder="Type it to sign"')+
+      '<div class="field"><label>Date</label><input value="'+esc(day(d.today,{month:'long',day:'numeric',year:'numeric'}))+'" readonly tabindex="-1"></div></div>'+
+    '<p class="foot">Typing your name here counts as your signature.</p>'+
+    '<p id="err"></p><div class="btns"><button class="btn" id="go">Sign and send</button></div>'+
+    '<p class="foot">The leaders keep the signed form as a PDF in the ward\'s private Google Drive. Health answers aren\'t stored anywhere else. Prefer paper? The printed form still works: ask a leader for one'+(d.paper?', or <a href="'+esc(d.paper)+'" target="_blank" rel="noopener noreferrer">print it yourself</a>':'')+'.</p>';
+
+  const yn={}, ok={};
+  m.querySelectorAll('[data-yn]').forEach(g=>g.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; const k=g.dataset.yn; yn[k]=b.dataset.v;
+    g.querySelectorAll('button').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-checked',x===b); }); const w=$(k+'W'); if(w) w.hidden=yn[k]!=='Yes'; }));
+  const flip=r=>{ const k=r.dataset.ok; ok[k]=!ok[k]; r.querySelector('.check').classList.toggle('on',ok[k]); r.setAttribute('aria-checked',ok[k]); };
+  m.querySelectorAll('[data-ok]').forEach(r=>{ r.onclick=()=>flip(r); r.onkeydown=e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); flip(r); } }; });
+  $('meds').addEventListener('input',()=>{ $('selfQ').hidden=!$('meds').value.trim(); });
+  const v=id=>($(id)?$(id).value.trim():'');
+  $('go').onclick=async()=>{
+    const f={action:'permitSubmit',t,birth:v('birth'),parent:v('parent'),rel:v('rel'),phone:v('phone'),phone2:v('phone2'),email:v('email'),ecName:v('ecName'),ecRel:v('ecRel'),ecPhone:v('ecPhone'),
+      diet:yn.diet||'',dietX:v('dietX'),alg:yn.alg||'',algX:v('algX'),meds:v('meds'),self:yn.self||'',chr:yn.chr||'',chrX:v('chrX'),sur:yn.sur||'',surX:v('surX'),limits:v('limits'),other:v('other'),signed:v('signed')};
+    (d.oks||[]).forEach(o=>f[o[0]]=!!ok[o[0]]);
+    const e=$('err'), b=$('go'); e.textContent=''; b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    let r; try{ r=await post(f); }catch(x){ r={ok:false,error:'Couldn\'t send. Check your connection and try again.'}; }
+    if(r.ok){ m.innerHTML='<div class="welcome" style="min-height:70vh"><h1>Thank you</h1><p>'+esc(r.message)+'</p><p>If anything changes before the activity, please tell the leaders.</p></div>'; window.scrollTo(0,0); return; }
+    b.disabled=false; b.textContent='Sign and send'; e.textContent=r.error||'Something went wrong. Please try again.';
+  };
+})();
+</script></body></html>

@@ -93,7 +93,10 @@
   });
 
   /* ---------------- Permission forms ---------------- */
-  let PF = null;
+  /* Paper forms: tap each name as they come in. Online: each family gets a text with a personal link (permit.html?t=…);
+     a signed form marks the youth as turned in and saves a PDF that leaders open here. */
+  let PF = null, PFF = null;
+  const pfApp = () => location.origin + location.pathname.replace(/[^/]*$/, '');
   WH.routes.permits = {
     view(args) {
       if (args && args[0]) return pfOpen(decodeURIComponent(args[0]));
@@ -105,24 +108,63 @@
     const { esc, I, fmt } = WH, d = PF;
     document.querySelectorAll('.pfadd').forEach(x => x.innerHTML = `<button class="btn small" data-act="pfNew">${I.plus} Add</button>`);
     document.getElementById('body').innerHTML = `<div class="list">${d.events.length ? d.events.map(e => `<button class="row" data-go="#/x/permits/${encodeURIComponent(e.id)}"><div class="main"><div class="t">${esc(e.title)}</div><div class="s">${esc(fmt(e.date, { weekday: 'short', month: 'short', day: 'numeric' }))}${e.end ? '–' + esc(fmt(e.end)) : ''} · ${esc(e.org)}</div></div><span class="chip ${e.total && e.received === e.total ? 'green' : 'orange'}">${e.received} of ${e.total}</span>${I.chev}</button>`).join('') : '<div class="empty">No trips need forms. Tap Add, or turn on "Youth need permission forms" on any calendar item.</div>'}</div>
-      <p class="foot">Uses the Church's Parental or Guardian Permission and Medical Release form. Keep the signed paper forms with you on the trip.</p>`;
+      <p class="foot">Uses the Church's Parental or Guardian Permission and Medical Release form. ${d.online ? 'Parents can sign it online from a personal link you text them, or on paper. ' : ''}Keep the signed forms with you on the trip.</p>`;
   }
   function pfOpen(id) {
     WH.screen('Permission forms', '', WH.skeleton(6), { back: '#/x/permits', backLabel: 'Forms' });
-    WH.call('permissions', { id }).then(d => { PF = d; pfDraw(); }).catch(err);
+    WH.call('permissions', { id, app: pfApp() }).then(d => { PF = d; PF.texted = {}; pfDraw(); }).catch(err);
+  }
+  const pfWhen = e => WH.fmt(e.date, { weekday: 'long', month: 'long', day: 'numeric' });
+  const pfFirst = n => String(n).split(' ')[0];
+  const pfAnd = a => a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1] : (a[0] || '');
+  const pfOn = () => !!(PF.online && PF.linksOpen);
+  const pfUrl = y => (PF.appUrl || pfApp()) + 'permit.html?t=' + encodeURIComponent(y.t);
+  /* One text per family: only that family's youth and their own links. */
+  function pfMsg(kids) {
+    const e = PF.event, head = `Hi! ${e.title} is ${pfWhen(e)}${e.place ? ' (' + e.place + ')' : ''}.`, who = pfAnd(kids.map(y => pfFirst(y.n)));
+    if (!pfOn() || !kids.length || kids.some(y => !y.t)) return `${head} Please fill out and sign the permission and medical release form${kids.length ? ' for ' + who : ''} and send it back to me before then: ${PF.link}`;
+    return `${head} Please fill out ${who}'s permission and medical release form before then. It takes about 3 minutes:\n${kids.map(y => (kids.length > 1 ? pfFirst(y.n) + ': ' : '') + pfUrl(y)).join('\n')}\nThis link is just for your family. A paper form works too.`;
+  }
+  /* Youth still missing a form, grouped by the parents' phones so brothers and sisters share one text. */
+  function pfFamilies() {
+    const by = {}, out = [];
+    PF.youth.filter(y => !y.received && y.parents.length && y.t).forEach(y => {
+      const k = y.parents.map(p => String(p.p).replace(/\D/g, '').slice(-10)).sort().join(',');
+      if (!by[k]) out.push(by[k] = { kids: [], nums: y.parents.map(p => p.p), names: y.parents.map(p => p.n) });
+      by[k].kids.push(y);
+    });
+    return out;
   }
   function pfDraw() {
-    const { esc, fmt } = WH, d = PF, e = d.event, missing = d.youth.filter(y => !y.received);
-    const nums = missing.flatMap(y => y.parents.map(p => p.p));
-    const when = fmt(e.date, { weekday: 'long', month: 'long', day: 'numeric' });
-    const msg = `Hi! ${e.title} is ${when}${e.place ? ' (' + e.place + ')' : ''}. Please fill out and sign the permission and medical release form and send it back to me before then: ${d.link}`;
-    document.getElementById('body').innerHTML = `<div class="section-h big"><span>${esc(e.title)}</span></div><p class="foot" style="margin-top:-4px">${esc(when)}${e.time ? ' · ' + esc(e.time) : ''} · ${esc(e.org)} · ${d.youth.length - missing.length} of ${d.youth.length} turned in</p>
-      ${missing.length && nums.length && WH.smsHref ? `<div class="btns"><a class="btn" style="text-decoration:none" href="${esc(WH.smsHref(nums, msg))}">Text parents of the ${missing.length} still missing</a></div>` : ''}
-      <div class="btns"><button class="btn gray" data-act="pfLink">Copy the form link</button></div>
+    const { esc, fmt } = WH, d = PF, e = d.event, missing = d.youth.filter(y => !y.received), on = pfOn();
+    const nums = missing.flatMap(y => y.parents.map(p => p.p)), fams = on ? pfFamilies() : [], nOnline = d.youth.filter(y => y.online).length;
+    const when = pfWhen(e), tap = 'cursor:pointer';
+    const top = on
+      ? (fams.length ? `<div class="btns"><button class="btn" data-act="pfFam">${WH.I.msg.replace('<svg', '<svg width="18" height="18"')} Text each family (${fams.length})</button></div><p class="foot">One text per family, each with its own personal link. Parents can sign on their phone, or use a paper form.</p>` : '')
+      : (missing.length && nums.length && WH.smsHref ? `<div class="btns"><a class="btn" style="text-decoration:none" href="${esc(WH.smsHref(nums, pfMsg([])))}">Text parents of the ${missing.length} still missing</a></div>` : '');
+    const right = y => y.pdf ? `<button class="btn small gray" style="background:var(--accent-tint)" data-act="pfPdf" data-n="${esc(y.n)}">Open PDF</button>`
+      : on && !y.received && y.t && y.parents.length && WH.smsHref ? `<a class="btn small gray" style="text-decoration:none;background:var(--accent-tint)" data-act="pfText" data-n="${esc(y.n)}" href="${esc(WH.smsHref(y.parents.map(p => p.p), pfMsg([y])))}">${d.texted[y.n] ? 'Text again' : 'Text form link'}</a>` : '';
+    const sub = y => esc(y.cls) + (y.received ? (y.online ? ' · signed online ' : ' · turned in ') + (y.on ? esc(fmt(y.on)) : '') : !y.parents.length ? ' · no parent phone on file' : d.texted[y.n] ? ' · link texted' : '');
+    document.getElementById('body').innerHTML = `<div class="section-h big"><span>${esc(e.title)}</span></div><p class="foot" style="margin-top:-4px">${esc(when)}${e.time ? ' · ' + esc(e.time) : ''} · ${esc(e.org)} · ${d.youth.length - missing.length} of ${d.youth.length} turned in${nOnline ? ' (' + nOnline + ' online)' : ''}</p>
+      ${top}
+      <div class="btns"><button class="btn gray" data-act="pfLink">Copy the ${on ? 'paper ' : ''}form link</button></div>
       <div class="section-h"><span>Tap when you have their form</span></div>
-      <div class="list">${d.youth.map(y => `<button class="row ${y.received ? '' : ''}" data-act="pfMark" data-n="${esc(y.n)}"><span class="check ${y.received ? 'on' : ''}"></span><div class="main"><div class="t">${esc(y.n)}</div><div class="s">${esc(y.cls)}${y.received && y.on ? ' · turned in ' + esc(fmt(y.on)) : y.parents.length ? '' : ' · no parent phone on file'}</div></div></button>`).join('') || '<div class="empty">No one in these classes yet.</div>'}</div>
-      <p class="foot">Texts go to parents only, as youth protection asks.</p>`;
+      <div class="list">${d.youth.map(y => `<div class="row" role="button" style="${tap}" data-act="pfMark" data-n="${esc(y.n)}"><span class="check ${y.received ? 'on' : ''}"></span><div class="main"><div class="t">${esc(y.n)}</div><div class="s">${sub(y)}</div></div>${right(y)}</div>`).join('') || '<div class="empty">No one in these classes yet.</div>'}</div>
+      <p class="foot">Texts go to parents only, as youth protection asks.${on ? ' Forms signed online are saved as PDFs in the ward account\'s private Drive folder "Ward Hub permission forms"; health answers never go in the spreadsheet.' : ''}</p>`;
   }
+  function pfFamDraw() {
+    const { esc } = WH, s = PFF, f = s.list[s.i], n = s.list.length, msg = pfMsg(f.kids);
+    const html = `<header><span style="min-width:64px"></span><h2>Text each family</h2><button class="link r" data-act="close">Done</button></header><div id="pff">
+      <p class="foot" style="margin:4px 16px 8px">Family ${s.i + 1} of ${n}${f.sent ? ' · texted' : ''}</p>
+      <div class="list"><div class="row wrap"><div class="main"><div class="t">${esc(pfAnd(f.kids.map(y => y.n)))}</div><div class="s">To ${esc(f.names.join(', '))}</div></div></div>
+      <div class="row wrap"><div class="main"><div class="s" style="white-space:pre-wrap;color:var(--text);font-size:15px;word-break:break-all">${esc(msg)}</div></div></div></div>
+      <div class="btns"><a class="btn" style="text-decoration:none" data-act="pfFamText" href="${esc(WH.smsHref(f.nums, msg))}">${f.sent ? 'Text them again' : 'Text this family'}</a></div>
+      <div class="btns"><button class="btn gray" data-act="pfFamStep" data-d="-1" ${s.i ? '' : 'disabled style="opacity:.4"'}>Back</button><button class="btn gray" data-act="pfFamStep" data-d="1">${s.i + 1 < n ? (f.sent ? 'Next family' : 'Skip') : 'Finish'}</button></div>
+      <p class="foot">Each text carries only this family's link, so a form can't be signed for someone else's child.</p></div>`;
+    const cur = document.getElementById('pff');
+    if (cur && cur.closest('.sheet')) cur.closest('.sheet').innerHTML = '<div class="grab"></div>' + html; else WH.openSheet(html);
+  }
+  function pfB64(b64, type) { const a = atob(b64), u = new Uint8Array(a.length); for (let i = 0; i < a.length; i++) u[i] = a.charCodeAt(i); return new Blob([u], { type }); }
   Object.assign(WH.act, {
     pfNew() {
       WH.form('Trip or activity', [{ name: 'Title' }, { name: 'Organization', type: 'select', options: PF.orgs }, { name: 'Date', type: 'date' }, { name: 'End date', label: 'Ends (overnight)', type: 'date' }, { name: 'Start', ph: '7:00 PM' }, { name: 'Place' }, { name: 'Notes', type: 'textarea' }], { Organization: PF.orgs[0], Date: WH.nextSun() },
@@ -130,8 +172,28 @@
     },
     async pfMark(el) {
       const y = PF.youth.find(x => x.n === el.dataset.n); if (!y) return;
-      y.received = !y.received; y.on = y.received ? WH.ymd(WH.today()) : ''; pfDraw();
-      try { await WH.call('permissionMark', { event: PF.event.id, person: y.n, received: y.received }); } catch (e) { y.received = !y.received; pfDraw(); WH.toast(e.message); }
+      if (y.online && !confirm(pfFirst(y.n) + '\'s form was signed online. Mark it as not turned in?')) return;
+      const was = { received: y.received, on: y.on, online: y.online };
+      y.received = !y.received; y.on = y.received ? WH.ymd(WH.today()) : ''; y.online = false; pfDraw();
+      try { await WH.call('permissionMark', { event: PF.event.id, person: y.n, received: y.received }); } catch (e) { Object.assign(y, was); pfDraw(); WH.toast(e.message); }
+    },
+    pfText(el) { PF.texted[el.dataset.n] = 1; location.href = el.getAttribute('href'); setTimeout(pfDraw, 600); },
+    async pfPdf(el) {
+      const y = PF.youth.find(x => x.n === el.dataset.n); if (!y) return;
+      const label = el.textContent; el.innerHTML = '<span class="spin"></span>';
+      try {
+        const r = await WH.call('permitPdf', { event: PF.event.id, person: y.n });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(pfB64(r.pdf, 'application/pdf')); a.download = r.name || 'Permission form.pdf'; a.target = '_blank';
+        document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+      } catch (e) { WH.toast(e.message); }
+      el.textContent = label;
+    },
+    pfFam() { PFF = { list: pfFamilies(), i: 0 }; if (PFF.list.length) pfFamDraw(); },
+    pfFamText(el) { const f = PFF.list[PFF.i]; f.sent = 1; f.kids.forEach(y => PF.texted[y.n] = 1); location.href = el.getAttribute('href'); setTimeout(pfFamDraw, 600); },
+    pfFamStep(el) {
+      PFF.i = Math.max(0, PFF.i + +el.dataset.d);
+      if (PFF.i >= PFF.list.length) { const k = PFF.list.filter(f => f.sent).length; WH.closeSheet(); pfDraw(); WH.toast(k + ' of ' + PFF.list.length + ' families texted', true); return; }
+      pfFamDraw();
     },
     async pfLink() { try { await navigator.clipboard.writeText(PF.link); WH.toast('Link copied', true); } catch (e) { WH.toast(PF.link); } }
   });
