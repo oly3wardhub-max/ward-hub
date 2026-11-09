@@ -43,7 +43,7 @@
     body.innerHTML = h;
   }
   const fields = () => [{ name: 'Title' }, { name: 'Date', type: 'date' }, { name: 'Start', ph: '7:00 PM' }, { name: 'End', ph: '8:30 PM' }, { name: 'Organization', type: 'select', options: C.orgs }, { name: 'Place' },
-    { name: 'Public', label: 'On the public calendar', type: 'toggle' }, { name: 'Repeat', type: 'select', options: REPEAT.slice(1) }, { name: 'Until', label: 'Repeats until', type: 'date' }, { name: 'End date', label: 'Ends (multi-day)', type: 'date' }, { name: 'Notes', type: 'textarea' }];
+    { name: 'Public', label: 'On the public calendar', type: 'toggle' }, { name: 'Repeat', type: 'select', options: REPEAT.slice(1) }, { name: 'Until', label: 'Repeats until', type: 'date' }, { name: 'End date', label: 'Ends (multi-day)', type: 'date' }, { name: 'Permission form', label: 'Youth need permission forms', type: 'toggle' }, { name: 'Notes', type: 'textarea' }];
   Object.assign(WH.act, {
     calOrg(el) { WH.store.set('calOrg', el.dataset.org); draw(); },
     calNew() {
