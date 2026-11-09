@@ -337,6 +337,12 @@ function today_() { var d = new Date(); return new Date(d.getFullYear(), d.getMo
 function nextSunday_(from) { var d = from ? new Date(from) : today_(); d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); return d; }
 function addDays_(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function parseYmd_(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+/* "Jackson & Shea Barney" teaches as Jackson Barney and Shea Barney. */
+function teaches_(teacher, name) {
+  var parts = String(teacher || '').split(/\s*(?:&|,|\band\b|\/)\s*/).filter(Boolean), k = nkey_(name);
+  if (parts.length >= 2) { var last = parts[parts.length - 1].split(' ').pop(); parts = parts.map(function (p) { return p.indexOf(' ') < 0 ? p + ' ' + last : p; }); }
+  return parts.some(function (p) { return nkey_(p) === k; });
+}
 function weekOfMonth_(d) { return Math.floor((d.getDate() - 1) / 7) + 1; }
 
 /* ---------------- actions ---------------- */
@@ -476,6 +482,12 @@ function today_view_(me) {
     var tr = rows_('Training').filter(function (x) { return x.Expires && x.Expires <= ymd_(addDays_(t, 30)); });
     if (tr.length) needs.push({ kind: 'training', title: tr.length + ' youth protection renewal' + (tr.length > 1 ? 's' : '') + ' due soon', due: tr[0].Expires, sub: tr.slice(0, 3).map(function (x) { return x.Person; }).join(', ') });
   }
+  var myk2 = nkey_(me.name), in14 = ymd_(addDays_(t, 14));
+  rows_('Teaching').forEach(function (l) {
+    if (!l.Date || l.Date < tY || l.Date > in14 || !teaches_(l.Teacher, me.name)) return;
+    var topic = String(l.Lesson || '').replace(/^Come, Follow Me( for Primary)?:\s*/i, '');
+    needs.push({ kind: 'teach', id: l.ID, title: 'You teach ' + (l.Class && l.Class !== l.Organization ? l.Class : l.Organization) + (topic ? ': ' + topic : ''), due: l.Date, sub: l.Organization, link: l.Link || (typeof lessonLink_ === 'function' ? lessonLink_(l.Organization, l.Lesson, l.Date) : '') });
+  });
   needs.sort(function (a, b) { return String(a.due || '9999').localeCompare(String(b.due || '9999')); });
 
   if (can_(me, 'Events', 'read')) occurrences_(me, tY, wkEnd).forEach(function (e) { week.push({ date: e.date, time: e.time, title: e.title, org: e.org, place: e.place }); });
@@ -708,7 +720,9 @@ ACTIONS.audiences = function (req, me) {
       }
     }
     if (org === 'Young Women' || org === 'Young Men' || org === 'Primary' || org === 'Sunday School') {
+      var leadsOrg = isBishopric_(me) || me.orgs.indexOf(org) >= 0;
       var cls = classGroups(org, 'Class');
+      if (!leadsOrg) { var myk = nkey_(me.name); cls = cls.filter(function (c) { return G.some(function (g) { return g.Organization === org && g.Group === c && g.Role === 'Teacher' && nkey_(g.Person).indexOf(myk) >= 0; }); }); }
       var everyone = [];
       cls.forEach(function (c) {
         var kids = membersOf(org, c, 'Member');
@@ -716,6 +730,7 @@ ACTIONS.audiences = function (req, me) {
         everyone = everyone.concat(mem);
         add(org, 'c:' + c, c, mem, { youth: org !== 'Primary', children: org === 'Primary' });
       });
+      if (!leadsOrg) return;
       if (cls.length > 1) add(org, 'all', org === 'Primary' ? 'All Primary families' : 'Everyone in ' + org, everyone, { youth: org !== 'Primary', children: org === 'Primary' });
       var teachers = G.filter(function (g) { return g.Organization === org && g.Role === 'Teacher'; }).map(function (g) { return byName[nkey_(g.Person)]; }).filter(Boolean);
       var leaders = C.filter(function (c) { return c.Organization === org; }).map(function (c) { return byName[nkey_(c.Person)]; }).filter(Boolean);
