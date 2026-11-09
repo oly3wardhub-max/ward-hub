@@ -44,7 +44,7 @@ var SCHEMA = {"tabs":[
   {"name":"Substitutes","section":"Teaching","cols":[["ID","id"],["Organization","org"],["Class","text"],["Date","date"],["Teacher","text"],["Phone","phone"],["Note","text"],["Status","choice:Asked,Found,Cancelled"],["Substitute","text"],["Task","text"],["Created","datetime"]],"read":["admin","bishopric","leader"],"edit":["admin","bishopric"],"scope":"Organization","note":"Teachers asking for a substitute (from sub.html). The presidency sees each one on Today.","help":["","","","The Sunday","Who asked","","","","","Task ID on the president's list",""]},
   {"name":"Checklist Templates","section":"Leaders","cols":[["ID","id"],["Name","text"],["Organization","org"],["Steps","text"],["Notes","text"]],"read":["admin","bishopric","leader"],"edit":["admin","bishopric"],"scope":null,"note":"Checklists the Hub offers: move-in welcome, temple preparation, new convert, mission preparation, and your own.","help":["","","Who runs it","One step per line",""]},
   {"name":"Checklists","section":"Leaders","cols":[["ID","id"],["Person","person"],["Checklist","text"],["Organization","org"],["Steps","json"],["Started by","text"],["Started","date"],["Status","choice:Open,Done"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":"Organization","note":"Checklists in progress for a person. The bishopric and the organization that owns each one see it.","help":["","Who it is for","","","Made by the Hub","","","",""]},
-  {"name":"Youth Agendas","section":"Leaders","cols":[["ID","id"],["Date","date"],["Organization","org"],["Class","text"],["Conducting","text"],["Opening prayer","text"],["Spiritual thought","text"],["Business","text"],["Lesson","text"],["Closing prayer","text"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":"Organization","note":"Youth class and quorum presidencies' Sunday agendas. Names only, never phone numbers.","help":["","The Sunday","","Class or quorum","","","","","","",""]},
+  {"name":"Youth Agendas","section":"Leaders","cols":[["ID","id"],["Date","date"],["Organization","org"],["Class","text"],["Conducting","text"],["Opening prayer","text"],["Spiritual thought","text"],["Business","text"],["Lesson","text"],["Introduces the lesson","text"],["Helps teach","text"],["Closing prayer","text"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":"Organization","note":"Youth class and quorum presidencies' Sunday agendas. Names only, never phone numbers.","help":["","The Sunday","","Class or quorum","","","","","","","","",""]},
   {"name":"Visits","section":"Leaders","cols":[["ID","id"],["Date","date"],["Time","time"],["Meeting","text"],["Organization","org"],["Visitor","text"],["Host","text"],["Notes","text"]],"read":["admin","bishopric","leader"],"edit":["admin","bishopric"],"scope":"Organization","note":"Which stake leader visits which class or meeting on ward conference Sunday.","help":["","Ward conference Sunday","","Class or meeting visited","","Stake leader","Ward leader who welcomes them",""]}
 ],"settings":[
   ["ward_name", "Ward", "Ward name", "", "Shown at the top of the app and program"],
@@ -125,7 +125,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.12.0';
+var VERSION = '2.13.0';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -682,6 +682,7 @@ function setUp() {
   var have = {}; rows_('Settings').forEach(function (r) { have[r.Key] = 1; });
   SCHEMA.settings.forEach(function (s) { if (!have[s[0]]) save_(null, 'Settings', { Key: s[0], Section: s[1], Setting: s[2], Value: s[3], Help: s[4] }, { system: true, quiet: true }); });
   try { repairs_(); } catch (e) { log_('Hub', 'repair', '', '', String(e)); }
+  try { lessonPlan_(); } catch (e) { log_('Hub', 'lesson plan', '', '', String(e)); }
   try { installJobs_(); } catch (e) { log_('Hub', 'jobs', '', '', String(e)); }
   var blank = ss_().getSheetByName('Sheet1'); if (blank && blank.getLastRow() === 0 && ss_().getSheets().length > 1) ss_().deleteSheet(blank);
   var me = Session.getEffectiveUser().getEmail(), a = null;
@@ -1589,11 +1590,13 @@ function jobRecord_(name, fn) {
 function nightly() {
   jobRecord_('sources', readSources_);
   jobRecord_('meetings', function () { ensureMeetings_(); return 'ok'; });
+  jobRecord_('lessons', lessonPlan_);
   jobRecord_('publish', schedulePublish_);
   jobRecord_('emails', function () { if (emailPaused_()) return 'paused'; return emailJobs_(null) + ' sent'; });
   jobRecord_('backup', function () { return backup_(false); });
   jobRecord_('transcripts', cleanTranscripts_);
   jobRecord_('permission forms', cleanPermits_);
+  jobRecord_('newsletter pictures', cleanNewsletterImages_);
   jobRecord_('tidy', tidy_);
 }
 /* Every linked source, every night: calendars and iCal links → Events; Google Sheets and Docs → see 85_sources. Weekly ones run on Mondays. */
@@ -1900,8 +1903,17 @@ function backup_(force) {
 }
 
 /* ---------- newsletters ---------- */
-/* Written once in the app. Lines like [lessons] or [birthdays] fill themselves in. Big lists go out in parts over the quietest days, so the ward account stays under Google's daily limit. */
+/* Written in the app as a list of blocks. The blocks are kept as readable lines in the Items column:
+     # Heading
+     Text (a blank line between paragraphs; [words](https://link) and **bold** are allowed)
+     [picture https://… | caption]          a picture saved in the ward account's Drive (shared by link, so it shows in email)
+     [button Sign up | https://…]           a link button (a flyer, a sign-up sheet)
+     [events 6 weeks · skip ID@date, …]     every calendar item from the newsletter's date on, minus the ones left out
+     [lessons] [birthdays] [birthdays next] [new members] [stake calendar] [ward calendar] fill themselves in.
+   Older newsletters (Intro, "Include calendar", Attachment) still render exactly as before.
+   Big lists go out in parts over the quietest days, so the ward account stays under Google's daily limit. */
 var NL_TOKENS = ['lessons', 'birthdays', 'birthdays next', 'stake calendar', 'ward calendar', 'new members'];
+var NL_IMG_FOLDER = 'Ward Hub newsletter images', NL_IMG_MAX = 8 * 1024 * 1024, NL_WEEKS = [2, 4, 6, 8];
 function nlOrgs_(me) {
   var withGroup = {}; rows_('Groups').forEach(function (g) { if (/newsletter/i.test(g.Group)) withGroup[g.Organization] = 1; });
   var all = ['Relief Society', 'Elders Quorum'].concat(Object.keys(withGroup).filter(function (o) { return o !== 'Relief Society' && o !== 'Elders Quorum'; }));
@@ -1949,32 +1961,144 @@ function nlBlock_(tok, n) {
   }
   return '';
 }
-/* Line by line: "# Heading", a [token] alone on its line, or text (blank lines between paragraphs). {month} is the newsletter's month. */
-function nlHtml_(n) {
-  var out = '', para = [], month = nlMonth_(n), next = nlMonth_(n, true);
-  var flush = function () { if (para.length) out += '<p>' + para.join('<br>') + '</p>'; para = []; };
-  var fill = function (s) { return String(s).replace(/\{month\}/gi, month).replace(/\{next month\}/gi, next); };
-  var link = function (s) { return escH_(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>').replace(/(^|\s)(www\.[^\s<]+|[a-z0-9-]+\.(?:org|com)(?:\/[^\s<]*)?)(?=\s|$|[.,])/gi, '$1<a href="https://$2">$2</a>'); };
-  var used = {};
-  (fill(n.Intro || '') + '\n\n' + fill(n.Items || '')).split('\n').forEach(function (line) {
-    var t = line.trim(), tok = t.match(/^\[([a-z ]+)\]$/i);
-    if (!t) { flush(); return; }
-    if (tok && NL_TOKENS.indexOf(tok[1].toLowerCase()) >= 0) { flush(); used[tok[1].toLowerCase()] = 1; out += nlBlock_(tok[1].toLowerCase(), n); return; }
-    if (/^#\s*/.test(t)) { flush(); out += '<div style="font-size:17px;font-weight:700;margin:18px 0 6px;color:#1F2A44">' + escH_(t.replace(/^#\s*/, '')) + '</div>'; return; }
-    para.push(link(t));
+
+/* Items text → blocks. Unknown [words] stay text, so nothing old is lost. */
+function nlParse_(text) {
+  var out = [], para = [];
+  var flush = function () { while (para.length && !para[para.length - 1]) para.pop(); if (para.length) out.push({ t: 'p', text: para.join('\n') }); para = []; };
+  String(text || '').replace(/\r/g, '').split('\n').forEach(function (line) {
+    var t = line.trim(), m;
+    if (!t) { if (para.length) para.push(''); return; }
+    if ((m = t.match(/^\[([a-z ]+)\]$/i)) && NL_TOKENS.indexOf(m[1].toLowerCase()) >= 0) { flush(); out.push({ t: 'tok', tok: m[1].toLowerCase() }); return; }
+    if ((m = t.match(/^\[events(?:\s+(\d+)\s*weeks?)?\s*(?:[·;|]\s*skip\s+([^\]]*))?\]$/i))) { flush(); out.push({ t: 'ev', weeks: NL_WEEKS.indexOf(+m[1]) >= 0 ? +m[1] : 6, skip: String(m[2] || '').split(/\s*,\s*/).filter(function (k) { return /^[^\s,@]+@\d{4}-\d\d-\d\d$/.test(k); }) }); return; }
+    if ((m = t.match(/^\[picture\s+(https:\/\/[^\s|\]]+)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*((?:https?:\/\/|mailto:)[^\s|\]]+)\s*)?\]$/i))) { flush(); out.push({ t: 'pic', url: m[1], cap: m[2] || '', link: m[3] || '' }); return; }
+    if ((m = t.match(/^\[button\s+([^|]*?)\s*\|\s*((?:https?:\/\/|mailto:)[^\s|\]]+)\s*\]$/i))) { flush(); out.push({ t: 'btn', label: m[1] || 'Open', url: m[2] }); return; }
+    if (/^#/.test(t)) { flush(); out.push({ t: 'h', text: t.replace(/^#+\s*/, '') }); return; }
+    para.push(t.replace(/^\\/, ''));
   });
   flush();
-  if (n['Include calendar'] === true && !used['ward calendar']) out += '<div style="font-size:17px;font-weight:700;margin:18px 0 6px;color:#1F2A44">Coming up</div>' + nlBlock_('ward calendar', n);
+  return out;
+}
+/* One block from the app, checked and tidied (null if it is empty or not allowed). */
+function nlCleanBlock_(b) {
+  var one = function (s, max) { return String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').replace(/\|/g, '/').replace(/\]/g, ')').replace(/\s+/g, ' ').trim().slice(0, max || 300); };
+  var url = /^(https?:\/\/|mailto:)[^\s|\]]+$/;
+  if (!b || typeof b !== 'object') return null;
+  if (b.t === 'h') { var h = one(b.text, 200); return h ? { t: 'h', text: h } : null; }
+  if (b.t === 'p') {
+    var txt = String(b.text == null ? '' : b.text).replace(/\r/g, '').split('\n').map(function (l) { return l.trim(); }).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 12000);
+    return txt ? { t: 'p', text: txt } : null;
+  }
+  if (b.t === 'pic') return /^https:\/\/[^\s|\]]+$/.test(b.url || '') ? { t: 'pic', url: b.url, cap: one(b.cap, 300), link: url.test(b.link || '') ? b.link : '' } : null;
+  if (b.t === 'btn') return url.test(b.url || '') ? { t: 'btn', label: one(b.label, 80) || 'Open', url: b.url } : null;
+  if (b.t === 'ev') {
+    var seen = {};
+    return { t: 'ev', weeks: NL_WEEKS.indexOf(+b.weeks) >= 0 ? +b.weeks : 6, skip: (b.skip instanceof Array ? b.skip : []).map(String).filter(function (k) { if (seen[k] || !/^[^\s,@\]]+@\d{4}-\d\d-\d\d$/.test(k)) return false; seen[k] = 1; return true; }).slice(0, 200) };
+  }
+  if (b.t === 'tok' && NL_TOKENS.indexOf(b.tok) >= 0) return { t: 'tok', tok: b.tok };
+  return null;
+}
+/* Blocks → Items text (what the app saves). Text lines that would read as a heading or a [block] get a \ in front. */
+function nlSerialize_(blocks) {
+  return (blocks || []).slice(0, 300).map(nlCleanBlock_).filter(Boolean).map(function (b) {
+    if (b.t === 'h') return '# ' + b.text;
+    if (b.t === 'p') return b.text.split('\n').map(function (l) { return /^(#|\[|\\)/.test(l) ? '\\' + l : l; }).join('\n');
+    if (b.t === 'pic') return '[picture ' + b.url + (b.cap || b.link ? ' | ' + b.cap : '') + (b.link ? ' | ' + b.link : '') + ']';
+    if (b.t === 'btn') return '[button ' + b.label + ' | ' + b.url + ']';
+    if (b.t === 'ev') return '[events ' + b.weeks + ' weeks' + (b.skip.length ? ' · skip ' + b.skip.join(', ') : '') + ']';
+    return '[' + b.tok + ']';
+  }).join('\n\n');
+}
+/* Text with links and **bold**, one <p> per paragraph (lines inside a paragraph keep their breaks). */
+function nlText_(s) {
+  var keep = [], hold = function (h) { keep.push(h); return '\u0001' + (keep.length - 1) + '\u0002'; };
+  var bold = function (h) { return h.replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>'); };
+  var link = function (x) { return escH_(x).replace(/(https?:\/\/[^\s<\u0001]+)/g, '<a href="$1">$1</a>').replace(/(^|\s)(www\.[^\s<\u0001]+|[a-z0-9-]+\.(?:org|com)(?:\/[^\s<\u0001]*)?)(?=\s|$|[.,])/gi, '$1<a href="https://$2">$2</a>'); };
+  var out = '';
+  String(s || '').split(/\n\s*\n/).forEach(function (par) {
+    var lines = par.split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l; });
+    if (!lines.length) return;
+    out += '<p>' + lines.map(function (l) {
+      l = l.replace(/\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, function (all, label, url) { return hold('<a href="' + escH_(url) + '">' + bold(escH_(label)) + '</a>'); });
+      return bold(link(l)).replace(/\u0001(\d+)\u0002/g, function (all, i) { return keep[+i]; });
+    }).join('<br>') + '</p>';
+  });
+  return out;
+}
+var NL_SYS_ = { roles: { admin: 1, bishopric: 1 }, orgs: [] };
+/* Everything on the calendar for the newsletter's weeks: the organization's own events, the ward's, the stake's (unless a
+   Stake calendar block shows them separately) and any other organization's public events. */
+function nlEventList_(n, weeks, stakeApart) {
+  var from = nlDate_(n), to = ymd_(addDays_(parseYmd_(from), 7 * (NL_WEEKS.indexOf(+weeks) >= 0 ? +weeks : 6) - 1));
+  return occurrences_(NL_SYS_, from, to).filter(function (e) {
+    if (e.org === 'Stake') return !stakeApart;
+    if (/^Flags?:/i.test(String(e.title || '')) && !e.public) return false; // flag routes are for the crews, not the newsletter
+    return e.org === n.Organization || e.org === 'Ward' || e.public;
+  }).slice(0, 150);
+}
+function nlEventsHtml_(n, list, skip) {
+  var sk = {}; (skip || []).forEach(function (k) { sk[k] = 1; });
+  var L = list.filter(function (e) { return !sk[e.id + '@' + e.date]; });
+  if (!L.length) return '<p style="color:#8e8e93">Nothing on the calendar for these weeks.</p>';
+  var out = '', day = '';
+  L.forEach(function (e) {
+    if (e.date !== day) { day = e.date; out += '<div style="font-weight:700;margin:14px 0 4px;color:#1c1c1e">' + escH_(Utilities.formatDate(parseYmd_(e.date), tz_(), 'EEEE, MMMM d')) + '</div>'; }
+    var when = e.time ? escH_(e.time) + (e.endTime ? '–' + escH_(e.endTime) : '') : (e.end && e.end > e.date ? 'Through ' + escH_(fmtDay_(e.end)) : 'All day');
+    var sub = [e.place, e.org !== n.Organization && e.org !== 'Ward' ? e.org : ''].filter(Boolean).map(escH_).join(' · ');
+    out += '<div style="margin:0 0 8px 12px"><span style="color:#6e6e73">' + when + '</span> · <b>' + escH_(e.title) + '</b>' + (sub ? '<div style="color:#6e6e73;font-size:14px">' + sub + '</div>' : '') + '</div>';
+  });
+  return out;
+}
+function nlHead_(t) { return '<div style="font-size:17px;font-weight:700;margin:18px 0 6px;color:#1F2A44">' + escH_(t) + '</div>'; }
+function nlFill_(n) { var month = nlMonth_(n), next = nlMonth_(n, true); return function (s) { return String(s).replace(/\{month\}/gi, month).replace(/\{next month\}/gi, next); }; }
+function nlStakeApart_(blocks) { return blocks.some(function (b) { return b.t === 'tok' && b.tok === 'stake calendar'; }); }
+function nlBlockHtml_(b, n, fill, stakeApart) {
+  if (b.t === 'h') return nlHead_(fill(b.text));
+  if (b.t === 'p') return nlText_(fill(b.text));
+  if (b.t === 'pic') {
+    var img = '<img src="' + escH_(b.url) + '" alt="' + escH_(b.cap || '') + '" style="display:block;max-width:100%;height:auto;border:0;border-radius:8px;margin:0 auto">';
+    return '<div style="margin:12px 0;text-align:center">' + (b.link ? '<a href="' + escH_(b.link) + '">' + img + '</a>' : img) + (b.cap ? '<div style="color:#6e6e73;font-size:14px;margin-top:6px">' + escH_(b.cap) + '</div>' : '') + '</div>';
+  }
+  if (b.t === 'btn') return '<p style="margin:14px 0"><a href="' + escH_(b.url) + '" style="display:inline-block;background:#1F2A44;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600">' + escH_(b.label || 'Open') + '</a></p>';
+  if (b.t === 'ev') return nlEventsHtml_(n, nlEventList_(n, b.weeks, stakeApart), b.skip);
+  if (b.t === 'tok') return nlBlock_(b.tok, n);
+  return '';
+}
+function nlHtml_(n) {
+  var fill = nlFill_(n), blocks = nlParse_(fill(n.Intro || '')).concat(nlParse_(fill(n.Items || ''))), stake = nlStakeApart_(blocks), used = {}, out = '';
+  blocks.forEach(function (b) { if (b.t === 'tok') used[b.tok] = 1; if (b.t === 'ev') used.events = 1; out += nlBlockHtml_(b, n, fill, stake); });
+  if (n['Include calendar'] === true && !used['ward calendar']) out += nlHead_('Coming up') + nlBlock_('ward calendar', n);
   if (n.Attachment && !used['stake calendar']) out += '<p><a href="' + escH_(n.Attachment) + '" style="color:#1F2A44;font-weight:600">Open the attachment</a></p>';
   return mailWrap_(n.Subject || (n.Organization + ' newsletter'), out);
 }
+/* The blocks the editor shows: the old Intro becomes the first text, "Include calendar" becomes an events block and an
+   attachment (without a Stake calendar block) becomes a link button. Each block comes with how it looks. */
+function nlEditBlocks_(n) {
+  var b = nlParse_(n.Intro || '').concat(nlParse_(n.Items || '')), att = String(n.Attachment || '');
+  if (n['Include calendar'] === true && !b.some(function (x) { return x.t === 'ev' || (x.t === 'tok' && x.tok === 'ward calendar'); })) b.push({ t: 'h', text: 'Coming up' }, { t: 'ev', weeks: 6, skip: [] });
+  if (att && !nlStakeApart_(b)) { b.push({ t: 'btn', label: 'Open the attachment', url: att }); att = ''; }
+  return { blocks: b, attachment: att };
+}
+function nlRender_(n, blocks) {
+  var fill = nlFill_(n), stake = nlStakeApart_(blocks.filter(Boolean));
+  return blocks.map(function (b) {
+    if (!b) return { html: '' };
+    var o = { html: nlBlockHtml_(b, n, fill, stake) };
+    if (b.t === 'ev') {
+      var sk = {}; (b.skip || []).forEach(function (k) { sk[k] = 1; });
+      o.events = nlEventList_(n, b.weeks, stake).map(function (e) { var k = e.id + '@' + e.date; return { key: k, date: e.date, end: e.end || '', time: e.time || '', endTime: e.endTime || '', title: e.title, place: e.place || '', org: e.org, own: e.org === n.Organization, skipped: !!sk[k] }; });
+      o.stakeApart = stake;
+    }
+    return o;
+  });
+}
 function nlTemplate_(org, me) {
   var name = me.name || '';
-  if (org === 'Elders Quorum') return { Subject: 'Elders Quorum Weekend Update', Intro: 'Hello elders, time for another weekend update!',
-    Items: '# Announcements\n(Type this week\'s announcements here.)\n\n# EQ Lesson Schedule\n[lessons]\n\n# {month} Birthdays\n[birthdays]\n\n# New in the ward\n[new members]\n\n# Stake calendar\n[stake calendar]\n\n# Super High Quality Jokes* (*actual quality may vary)\n(Add your jokes.)\n\nHave a great week!\n' + name, 'Include calendar': false };
-  if (org === 'Relief Society') return { Subject: 'Relief Society News', Intro: 'Dear sisters,',
-    Items: '# Announcements\n(Type this week\'s announcements here.)\n\n# Lessons\n[lessons]\n\n# {month} Birthdays\n[birthdays]\n\n# Please welcome\n[new members]\n\n# Coming up\n[ward calendar]\n\n# Stake\n[stake calendar]\n\nWith love,\n' + name, 'Include calendar': false };
-  return { Subject: (setting_('ward_name') || 'Ward') + ' News', Intro: 'Dear friends,', Items: '# Coming up\n[ward calendar]\n\n# Stake\n[stake calendar]\n\n' + name, 'Include calendar': false };
+  if (org === 'Elders Quorum') return { Subject: 'Elders Quorum Weekend Update', Intro: '',
+    Items: 'Hello elders, time for another weekend update!\n\n# Announcements\n(Type this week\'s announcements here, or paste them in the box above.)\n\n# Coming up\n[events 6 weeks]\n\n# EQ Lesson Schedule\n[lessons]\n\n# {month} Birthdays\n[birthdays]\n\n# New in the ward\n[new members]\n\n# Stake calendar\n[stake calendar]\n\n# Super High Quality Jokes* (*actual quality may vary)\n(Add your jokes.)\n\nHave a great week!\n' + name, 'Include calendar': false };
+  if (org === 'Relief Society') return { Subject: 'Relief Society News', Intro: '',
+    Items: 'Dear sisters,\n\n# Announcements\n(Type this week\'s announcements here, or paste them in the box above.)\n\n# Coming up\n[events 6 weeks]\n\n# Lessons\n[lessons]\n\n# {month} Birthdays\n[birthdays]\n\n# Please welcome\n[new members]\n\n# Stake\n[stake calendar]\n\nWith love,\n' + name, 'Include calendar': false };
+  return { Subject: (setting_('ward_name') || 'Ward') + ' News', Intro: '', Items: 'Dear friends,\n\n# Announcements\n(Type the announcements here, or paste them in the box above.)\n\n# Coming up\n[events 6 weeks]\n\n# Stake\n[stake calendar]\n\n' + name, 'Include calendar': false };
 }
 function nlGet_(me, id) {
   var n = rows_('Newsletters').filter(function (x) { return x.ID === id; })[0];
@@ -2022,23 +2146,99 @@ ACTIONS.newsletters = function (req, me) {
   return { orgs: orgs.map(function (o) { return { org: o, count: nlRecipients_(o).length, group: rows_('Groups').some(function (g) { return g.Organization === o && /newsletter/i.test(g.Group); }) }; }), list: list, paused: emailPaused_(), tokens: NL_TOKENS };
 };
 ACTIONS.newsletterTemplate = function (req, me) { if (nlOrgs_(me).indexOf(req.org) < 0) throw new Error('Pick your organization.'); return { row: Object.assign({ Organization: req.org, Date: ymd_(today_()) }, nlTemplate_(req.org, me)) }; };
+/* Saves the row. From the block editor (req.blocks) the blocks become the Items text; with req.render it also returns how each block looks. */
 ACTIONS.newsletterSave = function (req, me) {
   var r = req.row || {}; if (nlOrgs_(me).indexOf(r.Organization) < 0) throw new Error('Pick your organization.');
   var cur = r.ID ? nlGet_(me, r.ID) : null;
   if (cur && /Scheduled|Sending/.test(cur.Status)) throw new Error('Cancel the schedule before changing it.');
+  if (cur && cur.Organization !== r.Organization) throw new Error('A newsletter stays with its organization.');
   var att = String(r.Attachment || '').trim(); if (att && !/^https:\/\//i.test(att)) throw new Error('The attachment needs to be a link that starts with https://');
-  var row = { Organization: r.Organization, Date: r.Date || ymd_(today_()), Subject: String(r.Subject || '').slice(0, 150), Intro: String(r.Intro || '').slice(0, 4000), Items: String(r.Items || '').slice(0, 20000), 'Include calendar': r['Include calendar'] === true, Attachment: att, Status: cur && cur.Status === 'Sent' ? 'Sent' : 'Draft' };
+  var date = /^\d{4}-\d\d-\d\d$/.test(r.Date || '') ? r.Date : ymd_(today_());
+  var row = { Organization: r.Organization, Date: date, Subject: String(r.Subject || '').slice(0, 150), Intro: String(r.Intro || '').slice(0, 4000), Items: String(r.Items || '').slice(0, 45000), 'Include calendar': r['Include calendar'] === true, Attachment: att, Status: cur && cur.Status === 'Sent' ? 'Sent' : 'Draft' };
+  var blocks = null;
+  if (req.blocks) {
+    if (!(req.blocks instanceof Array)) throw new Error('Bad blocks');
+    row.Items = nlSerialize_(req.blocks); row.Intro = ''; row['Include calendar'] = false;
+    if (row.Items.length > 45000) throw new Error('This newsletter is too long to save. Split it into two.');
+    blocks = req.blocks.slice(0, 300).map(nlCleanBlock_);
+  }
   if (r.ID) row.ID = r.ID;
-  return { id: save_(me, 'Newsletters', row, { system: true }) };
+  var id = save_(me, 'Newsletters', row, { system: true, quiet: !!(cur && req.blocks) });
+  var out = { id: id };
+  if (req.render) { var n = Object.assign({}, cur || {}, row, { ID: id }); out.render = nlRender_(n, blocks || nlEditBlocks_(n).blocks); out.html = nlHtml_(n); }
+  return out;
 };
 ACTIONS.newsletterView = function (req, me) {
   var n = nlGet_(me, req.id), emails = nlRecipients_(n.Organization).map(function (x) { return x.e; }), sched = /Scheduled|Sending/.test(n.Status);
-  var p = sched ? { plan: nlPlan_(n) } : nlPlanFor_(n, emails);
-  return { html: nlHtml_(n), subject: n.Subject, emails: emails, paused: emailPaused_(), status: n.Status || 'Draft',
+  var p = sched ? { plan: nlPlan_(n) } : nlPlanFor_(n, emails), ed = nlEditBlocks_(n), row = strip_(n); delete row['Send plan'];
+  var shown = Object.assign({}, n, { Attachment: ed.attachment }), look = nlRender_(shown, ed.blocks);
+  return { html: nlHtml_(n), subject: n.Subject, emails: emails, paused: emailPaused_(), status: n.Status || 'Draft', row: row, attachment: ed.attachment,
+    blocks: ed.blocks.map(function (b, i) { return Object.assign({}, b, look[i]); }),
     plan: p.plan.map(function (b) { return { date: b.date, count: b.to.length, sent: b.sent || '', load: p.load ? p.load[b.date] : null }; }) };
 };
 ACTIONS.newsletterRemove = function (req, me) { var n = nlGet_(me, req.id); if (/Scheduled|Sending/.test(n.Status)) throw new Error('Cancel the schedule first.'); return { removed: remove_(me, 'Newsletters', req.id) }; };
 ACTIONS.newsletterMarkSent = function (req, me) { var n = nlGet_(me, req.id); if (/Scheduled|Sending/.test(n.Status)) throw new Error('Cancel the schedule first.'); save_(me, 'Newsletters', { ID: n.ID, Status: 'Sent', 'Sent on': ymd_(today_()), 'Sent to': +req.count || '' }, { system: true }); return {}; };
+
+/* A picture for a newsletter: saved in the ward account's Drive folder "Ward Hub newsletter images" and shared
+   "anyone with the link can view", so it shows in everyone's email. The app shrinks pictures first (about 1600 px). */
+function nlImgFolder_() { var it = DriveApp.getFoldersByName(NL_IMG_FOLDER); return it.hasNext() ? it.next() : DriveApp.createFolder(NL_IMG_FOLDER); }
+function nlImgType_(bytes) {
+  var b = function (i) { return bytes[i] & 255; }, n = bytes.length;
+  if (n > 3 && b(0) === 0xFF && b(1) === 0xD8 && b(2) === 0xFF) return 'jpg';
+  if (n > 8 && b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4E && b(3) === 0x47) return 'png';
+  if (n > 6 && b(0) === 0x47 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x38) return 'gif';
+  if (n > 12 && b(0) === 0x52 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x46 && b(8) === 0x57 && b(9) === 0x45 && b(10) === 0x42 && b(11) === 0x50) return 'webp';
+  return '';
+}
+ACTIONS.newsletterImage = function (req, me) {
+  var n = nlGet_(me, req.id);
+  if (/Scheduled|Sending/.test(n.Status)) throw new Error('Stop the sending before changing it.');
+  var big = 'That picture is too big (over 8 MB). Try a smaller copy or a screenshot of it.', bytes;
+  if (req.src) {
+    var src = String(req.src);
+    if (!/^https:\/\/[^\s]+$/i.test(src)) throw new Error('That picture could not be copied. Save it, then use Choose photos.');
+    var res = null; try { res = UrlFetchApp.fetch(src, { muteHttpExceptions: true, followRedirects: true }); } catch (e) {}
+    if (!res || res.getResponseCode() !== 200) throw new Error('That picture could not be copied. Save it, then use Choose photos.');
+    bytes = res.getBlob().getBytes();
+  } else {
+    var data = String(req.data || '').replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
+    if (!data) throw new Error('No picture came through. Try again.');
+    if (data.length * 3 / 4 > NL_IMG_MAX + 3) throw new Error(big);
+    bytes = Utilities.base64Decode(data);
+  }
+  if (bytes.length > NL_IMG_MAX) throw new Error(big);
+  var ext = nlImgType_(bytes); if (!ext) throw new Error(req.src ? 'That picture could not be copied. Save it, then use Choose photos.' : 'That file is not a picture (JPEG, PNG, GIF or WebP).');
+  var name = 'Newsletter ' + n.ID + ' ' + ymd_(today_()) + ' ' + Utilities.getUuid().slice(0, 6) + '.' + ext;
+  var f = nlImgFolder_().createFile(Utilities.newBlob(bytes, ext === 'jpg' ? 'image/jpeg' : 'image/' + ext, name));
+  try { f.setDescription('Newsletter ' + n.ID); } catch (e) {}
+  try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); }
+  catch (e) { try { f.setTrashed(true); } catch (x) {} throw new Error('Google Drive would not share the picture by link, so it would not show in email. The ward account needs link sharing turned on.'); }
+  log_(me.name, 'picture', 'Newsletters', n.ID, Math.round(bytes.length / 1024) + ' KB');
+  return { url: 'https://lh3.googleusercontent.com/d/' + f.getId(), file: f.getId(), kb: Math.round(bytes.length / 1024) };
+};
+/* Nightly: pictures for newsletters older than 180 days (or for removed ones) move to the Drive trash. */
+function cleanNewsletterImages_() {
+  var it = DriveApp.getFoldersByName(NL_IMG_FOLDER); if (!it.hasNext()) return 'no pictures yet';
+  var days = +setting_('newsletter_image_days') || 180, cut = ymd_(addDays_(today_(), -days)), byId = {}, gone = 0, kept = 0;
+  rows_('Newsletters').forEach(function (n) { byId[n.ID] = n; });
+  var fi = it.next().getFiles();
+  while (fi.hasNext()) {
+    var f = fi.next(), m = String((f.getDescription && f.getDescription()) || f.getName()).match(/Newsletter (\S+)/), n = m ? byId[m[1]] : null;
+    var made = f.getDateCreated ? ymd_(f.getDateCreated()) : '', when = n ? [nlDate_(n), String(n['Sent on'] || '')].sort().pop() : '';
+    if (made && made < cut && (!n || when < cut)) { f.setTrashed(true); gone++; } else kept++;
+  }
+  return gone + ' old newsletter pictures moved to the trash · ' + kept + ' kept';
+}
+/* "Add an event" in the newsletter: a calendar item for the newsletter's organization, under the usual calendar rules. */
+ACTIONS.newsletterEvent = function (req, me) {
+  var n = nlGet_(me, req.id), e = req.event || {};
+  var title = String(e.Title || '').trim().slice(0, 120); if (!title) throw new Error('Add a title.');
+  if (!/^\d{4}-\d\d-\d\d$/.test(e.Date || '')) throw new Error('Pick a date.');
+  var row = { Title: title, Date: e.Date, Start: String(e.Start || '').trim().slice(0, 20), End: String(e.End || '').trim().slice(0, 20), Place: String(e.Place || '').trim().slice(0, 120),
+    Organization: n.Organization, Public: e.Public !== false, Status: 'Approved', Source: 'Newsletter' };
+  return { id: save_(me, 'Events', row) };
+};
+
 /* Plan the parts now; the 7 AM job sends each part on its day. */
 ACTIONS.newsletterSchedule = function (req, me) {
   var n = nlGet_(me, req.id);
@@ -3928,7 +4128,22 @@ function x2YouthClasses_(me) {
   rows_('Groups').forEach(function (g) { if (g.Role === 'Teacher' && nkey_(g.Person) === k && X2_YORGS.indexOf(g.Organization) >= 0) mine[g.Organization + '|' + g.Group] = 1; });
   return all.filter(function (c) { return mine[c.org + '|' + c.cls]; });
 }
-var X2_YA_FIELDS = ['Conducting', 'Opening prayer', 'Spiritual thought', 'Business', 'Lesson', 'Closing prayer', 'Notes'];
+var X2_YA_FIELDS = ['Conducting', 'Opening prayer', 'Spiritual thought', 'Business', 'Lesson', 'Introduces the lesson', 'Helps teach', 'Closing prayer', 'Notes'];
+var X2_YA_TURNS = ['Conducting', 'Opening prayer', 'Introduces the lesson', 'Helps teach', 'Closing prayer'];
+/* Turns: for a Sunday nobody has filled in, suggest who takes each part. Whoever has gone longest without a part goes first,
+   and nobody repeats last week's part. Pool = the class members, or the names on earlier agendas. */
+function x2Turns_(prevRows, names) {
+  var pool = names.slice(), last = {}, lastRole = {};
+  prevRows.forEach(function (a, i) { X2_YA_TURNS.forEach(function (k) { var n = String(a[k] || '').trim(); if (!n) return; if (pool.indexOf(n) < 0 && !names.length) pool.push(n); if (last[n] == null) { last[n] = i; lastRole[n] = i === 0 ? k : lastRole[n]; } }); });
+  if (pool.length < 2) return null;
+  var order = pool.slice().sort(function (a, b) { var x = last[a] == null ? 1e6 : last[a], y = last[b] == null ? 1e6 : last[b]; return y - x || pool.indexOf(a) - pool.indexOf(b); });
+  var out = {}, used = {};
+  X2_YA_TURNS.forEach(function (k) {
+    var pick = order.filter(function (n) { return !used[n] && lastRole[n] !== k; })[0] || order.filter(function (n) { return !used[n]; })[0];
+    if (pick) { out[k] = pick; used[pick] = 1; }
+  });
+  return out;
+}
 ACTIONS.youthAgendas = function (req, me) {
   var classes = x2YouthClasses_(me); if (!classes.length) throw new Error('Youth agendas are for youth class and quorum presidencies and their leaders.');
   var d = x2Ymd_(req.date) || ymd_(nextSunday_()), tY = ymd_(today_()), A = rows_('Youth Agendas'), G = rows_('Groups'), T = rows_('Teaching');
@@ -3937,9 +4152,13 @@ ACTIONS.youthAgendas = function (req, me) {
     var prev = A.filter(function (x) { return x.Date < d && x.Organization === c.org && x.Class === c.cls; }).sort(function (x, y) { return String(y.Date).localeCompare(String(x.Date)); })[0];
     var t = T.filter(function (x) { return x.Date === d && (x.Organization === c.org || x.Organization === 'Sunday School') && nkey_(x.Class) === nkey_(c.cls); })[0];
     var names = G.filter(function (g) { return g.Organization === c.org && g.Group === c.cls && g.Role === 'Member' && periodOk_(g.Period, tY); }).map(function (g) { return g.Person; }).sort();
-    var row = a ? strip_(a) : { Date: d, Organization: c.org, Class: c.cls };
+    var row = a ? strip_(a) : { Date: d, Organization: c.org, Class: c.cls }, turns = null;
     if (!a && t && t.Lesson) row.Lesson = String(t.Lesson) + (t.Teacher ? ' (' + t.Teacher + ')' : '');
-    return { org: c.org, cls: c.cls, row: row, saved: !!a, names: names, lastBusiness: prev ? prev.Business || '' : '' };
+    if (!a) {
+      var before = A.filter(function (x) { return x.Date < d && x.Organization === c.org && x.Class === c.cls; }).sort(function (x, y) { return String(y.Date).localeCompare(String(x.Date)); }).slice(0, 8);
+      turns = x2Turns_(before, names); if (turns) Object.keys(turns).forEach(function (k) { row[k] = turns[k]; });
+    }
+    return { org: c.org, cls: c.cls, row: row, saved: !!a, suggested: !!turns, link: t && t.Link || '', names: names, lastBusiness: prev ? prev.Business || '' : '' };
   }), sundays: x2Sundays_(5) };
 };
 ACTIONS.youthAgendaSave = function (req, me) {
@@ -3981,7 +4200,191 @@ function repairs_() {
       });
     }
   });
+  try { flagCrewsFromNotes_(); } catch (e) { log_('Hub', 'repair', 'Flag crews', '', String(e)); }
 }
+/* Flag holidays brought over from v1 list their crews in the notes ("Zone crews: 1=Rice, Lance & Mindy; 2=…").
+   Put those on the Flag crews tab, once, for holidays that don't have crews yet. "Last, First & Spouse" becomes "First & Spouse Last". */
+function flagCrewsFromNotes_() {
+  var have = {}; rows_('Flag crews').forEach(function (c) { have[c.Holiday] = 1; });
+  var n = 0;
+  rows_('Events').forEach(function (e) {
+    if (!/^Flags?:/i.test(String(e.Title || '')) || have[e.ID]) return;
+    var m = String(e.Notes || '').match(/Zone crews:\s*(.+)$/i); if (!m) return;
+    m[1].split(/;\s*(?=\d+\s*=)/).forEach(function (part) {
+      var z = part.match(/^\s*(\d+)\s*=\s*(.+?)\s*$/); if (!z) return;
+      var who = z[2], c = who.match(/^([^,]+),\s*(.+)$/); if (c) who = c[2].trim() + ' ' + c[1].trim();
+      save_(null, 'Flag crews', { Holiday: e.ID, Date: e.Date, Zone: z[1], Person: who, Kind: 'Family', Status: 'Assigned', Notes: 'From v1' }, { system: true, quiet: true });
+      n++;
+    });
+  });
+  return n;
+}
+
+
+/* ================= Lesson plan: the Church's Sunday curriculum on every class's schedule =================
+   Since September 2026 (First Presidency letter, March 30, 2026): sacrament meeting, then 25 minutes of Sunday School
+   (Come, Follow Me) and 25 minutes of quorum, Relief Society and Young Women; Primary meets every week.
+   - Young Women and Aaronic Priesthood quorums study one chapter of the For the Strength of Youth guide each month:
+     fast Sunday introduces the chapter, the middle Sundays "learn more", the last Sunday is
+     "Becoming a covenant daughter / son of God". The fast and last Sunday lessons are never dropped when a
+     conference takes a Sunday; with fewer Sundays the middle lessons are combined.
+   - Sunday School and Primary follow Come, Follow Me for Home and Church (2026 Old Testament, 2027 New Testament).
+     On fast Sunday Primary may use a fast-Sunday lesson from the back of the manual.
+   - Elders quorum and Relief Society teach from general conference messages the presidency chooses.
+   - No classes on general conference Sundays (first Sunday of April and October) or stake conference.
+   Runs nightly and from setUp. It only rewrites lessons the Hub wrote itself (or blank ones), so anything a leader
+   types stays exactly as typed. */
+var CUR_FSY_ = ['God’s plan is for you', 'God wants to communicate with you', 'You can help with God’s work', 'Jesus Christ will help you',
+  'Walk in God’s light', 'Love God, love your neighbor', 'Ordinances and covenants give you access to God’s blessings',
+  'Temple ordinances and covenants give you greater access to God’s blessings', 'You are blessed by priesthood keys and authority',
+  'Your body is sacred', 'Truth will make you free', 'Jesus Christ brings joy'];
+/* Second- and third-Sunday topics already published. Later months are read from the lesson pages when they appear. */
+var CUR_TOPICS_ = { '2026-09': ['the restoration of the priesthood', 'priesthood keys'], '2026-10': ['the Word of Wisdom', 'the law of chastity'], '2026-11': ['studying the scriptures', 'the search for truth'] };
+var CUR_CFM_ = [{ from: '2025-12-28', base: '2025-12-29', slug: 'come-follow-me-for-home-and-church-old-testament-2026' },
+  { from: '2026-12-27', base: '2026-12-28', slug: 'come-follow-me-for-home-and-church-new-testament-2027' }];
+var CUR_SITE_ = 'https://www.churchofjesuschrist.org/study/';
+var CUR_GC_LINK_ = CUR_SITE_ + 'general-conference?lang=eng';
+var CUR_AUTO_ = /^(For the Strength of Youth guide|FSY|Come, Follow Me|General conference message|No classes: (general|stake) conference|Behold Your Little Ones|Songs for this month)/;
+var CUR_YOUTH_ = ['Young Women', 'Young Men'];
+
+function curYm_(d) { return d.slice(0, 7); }
+function curSundaysOf_(ym) { var p = ym.split('-'), d = new Date(+p[0], +p[1] - 1, 1), out = []; while (d.getDay() !== 0) d.setDate(d.getDate() + 1); while (d.getMonth() === +p[1] - 1) { out.push(ymd_(d)); d.setDate(d.getDate() + 7); } return out; }
+function curGenConf_(d) { var m = +d.slice(5, 7); return (m === 4 || m === 10) && +d.slice(8, 10) <= 7; }
+function curStakeConf_() {
+  var out = {};
+  rows_('Events').forEach(function (e) {
+    if (!/stake conference/i.test(String(e.Title || '')) || e.Status === 'Cancelled' || !e.Date) return;
+    var d = parseYmd_(e.Date), end = e['End date'] ? parseYmd_(e['End date']) : d;
+    for (var i = 0; i < 4 && d <= end; i++) { if (d.getDay() === 0) out[ymd_(d)] = 1; d = addDays_(d, 1); }
+  });
+  return out;
+}
+function curFast_(ym, stake) { var s = curSundaysOf_(ym).filter(function (d) { return !curGenConf_(d) && !stake[d]; }); return s[0] || ''; }
+function curCfm_(d) {
+  var m = null; CUR_CFM_.forEach(function (x) { if (d >= x.from) m = x; });
+  if (!m) return '';
+  var wk = Math.floor((parseYmd_(d) - parseYmd_(m.base)) / 864e5 / 7) + 1;
+  return wk >= 1 && wk <= 52 ? CUR_SITE_ + 'manual/' + m.slug + '/' + (wk < 10 ? '0' : '') + wk + '?lang=eng' : '';
+}
+function curFsyLink_(ym, slug) { var p = ym.split('-'); return CUR_SITE_ + 'ftsoy/' + p[0] + '/' + p[1] + (slug ? '/fsy-lessons/' + slug : '') + '?lang=eng'; }
+/* Reads "2. Learn more about …" from the Church's lesson page once it's published, and remembers it. */
+function curTopic_(ym, n) {
+  var known = CUR_TOPICS_[ym]; if (known) return known[n - 2];
+  var props = PropertiesService.getScriptProperties(), key = 'fsy:' + ym + ':' + n, got = props.getProperty(key);
+  if (got) return got;
+  var now = ymd_(today_()); if (ym > curYm_(ymd_(addDays_(today_(), 70))) || ym < curYm_(now)) return '';
+  var cache = CacheService.getScriptCache(); if (cache.get('try:' + key)) return '';
+  cache.put('try:' + key, '1', 86400);
+  try {
+    var r = UrlFetchApp.fetch(curFsyLink_(ym, n === 2 ? '02-second-sunday' : '03-third-sunday'), { muteHttpExceptions: true, followRedirects: true });
+    if (r.getResponseCode() !== 200) return '';
+    var html = r.getContentText(), m = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title>([\s\S]*?)<\/title>/i);
+    var t = m ? m[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&#x27;|&#39;|&rsquo;/g, '’').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim() : '';
+    t = t.replace(/\s*[|–-]\s*(For the Strength of Youth|The Church of Jesus Christ).*$/i, '').replace(/^\d\.\s*/, '');
+    var lm = t.match(/^Learn more about\s+(.{3,120})$/i); if (!lm) return '';
+    props.setProperty(key, lm[1]); return lm[1];
+  } catch (e) { return ''; }
+}
+/* The FSY lesson for one class Sunday. slots = that org's class Sundays this month, in order. */
+function curFsy_(org, d, slots) {
+  var ym = curYm_(d), ch = CUR_FSY_[+ym.slice(5, 7) - 1], i = slots.indexOf(d), n = slots.length;
+  var t2 = function () { return curTopic_(ym, 2); }, t3 = function () { return curTopic_(ym, 3); };
+  var about = function (t) { return t ? 'Learn more about ' + t : 'Learn more about this month’s chapter, “' + ch + '”'; };
+  if (i === 0) return { lesson: 'FSY (fast Sunday): Study the chapter “' + ch + '” in the For the Strength of Youth guide' + (d >= '2027-01-01' ? ' and choose an invitation' : ''), link: curFsyLink_(ym, '01-fast-sunday') };
+  if (i === n - 1) return org === 'Young Women' ? { lesson: 'FSY (last Sunday): Becoming a covenant daughter of God', link: curFsyLink_(ym, '04a-fourth-sunday') }
+    : { lesson: 'FSY (last Sunday): Becoming a covenant son of God', link: curFsyLink_(ym, '04b-fourth-sunday') };
+  if (n === 3) { var a = t2(), b = t3(); return { lesson: 'FSY: ' + (a && b ? 'Learn more about ' + a + ' and ' + b : about('')) + ' (the 2nd and 3rd Sunday lessons together)', link: curFsyLink_(ym, '02-second-sunday') }; }
+  if (i === 1) return { lesson: 'FSY: ' + about(t2()), link: curFsyLink_(ym, '02-second-sunday') };
+  if (i === 2) return { lesson: 'FSY: ' + about(t3()), link: curFsyLink_(ym, '03-third-sunday') };
+  return { lesson: 'FSY: Learn more — the class presidency picks from this month’s FSY magazine (“' + ch + '”)', link: curFsyLink_(ym, '') };
+}
+function curLesson_(org, cls, d, cur, ctx) {
+  if (curGenConf_(d)) return { lesson: 'No classes: general conference', link: CUR_GC_LINK_ };
+  if (ctx.stake[d]) return { lesson: 'No classes: stake conference', link: '' };
+  var fast = ctx.fast[curYm_(d)] === d, cfm = curCfm_(d), base = String(cur || '').replace(/\s*\((or a new fast-Sunday lesson)\)\s*$/, '').replace(/\s*— fast Sunday:.*$/, '');
+  if (CUR_YOUTH_.indexOf(org) >= 0) return curFsy_(org, d, ctx.slots[org + '|' + curYm_(d)] || [d]);
+  if (org === 'Elders Quorum' || org === 'Relief Society') return { lesson: /^General conference message/.test(base) ? base : 'General conference message (the presidency chooses the talk)', link: CUR_GC_LINK_ };
+  if (org === 'Primary') {
+    if (/nursery/i.test(cls) || /^Behold Your Little Ones/.test(base)) return { lesson: 'Behold Your Little Ones (nursery manual)', link: CUR_SITE_ + 'manual/behold-your-little-ones-nursery-manual?lang=eng' };
+    if (/singing|music/i.test(cls) || /^Songs for this month/.test(base)) return { lesson: 'Songs for this month (Primary music)', link: '' };
+    if (!/^Come, Follow Me/.test(base)) base = 'Come, Follow Me for Primary: this week’s lesson';
+    return { lesson: base + (fast ? ' — fast Sunday: you may use a fast-Sunday lesson from the back of the manual' : ''), link: cfm };
+  }
+  if (org === 'Sunday School') return { lesson: /^Come, Follow Me/.test(base) ? base : 'Come, Follow Me: this week’s lesson', link: cfm };
+  return null;
+}
+function lessonPlan_() {
+  var sh = sheet_('Teaching'), d = tabDef_('Teaching'), lastCol = Math.max(sh.getLastColumn(), d.cols.length);
+  var head = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String), col = {};
+  ['ID', 'Organization', 'Class', 'Date', 'Teacher', 'Lesson', 'Link'].forEach(function (k) { col[k] = head.indexOf(k); });
+  if (col.Lesson < 0 || col.Date < 0) return 'no Teaching tab';
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var last = sh.getLastRow(), vals = last >= 2 ? sh.getRange(2, 1, last - 1, lastCol).getValues() : [];
+    var ds = function (v) { return v instanceof Date ? ymd_(v) : String(v || '').slice(0, 10); };
+    var tY = ymd_(today_()), from = ymd_(addDays_(today_(), -7)), horizon = ymd_(addDays_(today_(), 7 * 20));
+    var stake = curStakeConf_(), ctx = { stake: stake, fast: {}, slots: {} };
+    /* Keep each organization's classes going at least 20 weeks ahead (same classes and teachers as its last Sunday). Relief Society gets its own row if it has none. */
+    var byOrg = {}; vals.forEach(function (r) { var o = String(r[col.Organization] || ''), dd = ds(r[col.Date]); if (!o || !/^\d{4}-\d\d-\d\d$/.test(dd)) return; if (!byOrg[o] || dd > byOrg[o].last) byOrg[o] = { last: dd }; });
+    if (!byOrg['Relief Society']) byOrg['Relief Society'] = { last: '', seed: [['Relief Society', '']] };
+    var added = [];
+    Object.keys(byOrg).forEach(function (o) {
+      if (['Sunday School', 'Primary', 'Elders Quorum', 'Relief Society', 'Young Women', 'Young Men'].indexOf(o) < 0) return;
+      var info = byOrg[o], seed = info.seed || vals.filter(function (r) { return String(r[col.Organization]) === o && ds(r[col.Date]) === info.last; }).map(function (r) { return [String(r[col.Class] || ''), String(r[col.Teacher] || '')]; });
+      if (!seed.length) return;
+      var s = info.last ? addDays_(parseYmd_(info.last), 7) : nextSunday_(today_());
+      if (ymd_(s) < tY) s = nextSunday_(today_());
+      for (; ymd_(s) <= horizon; s = addDays_(s, 7)) {
+        seed.forEach(function (c) {
+          var line = head.map(function () { return ''; });
+          line[col.ID] = newId_('Teaching'); line[col.Organization] = o; line[col.Class] = c[0]; line[col.Date] = new Date(s.getTime()); if (col.Teacher >= 0) line[col.Teacher] = c[1]; line[col.Lesson] = '';
+          if (col.Link >= 0) line[col.Link] = '';
+          added.push(line);
+        });
+      }
+    });
+    var all = vals.concat(added);
+    /* Class Sundays per youth org and month: not conference Sundays, and not Sundays a leader marked "5th Sunday…" or "No classes…". */
+    var off = {};
+    all.forEach(function (r) { var o = String(r[col.Organization]), dd = ds(r[col.Date]); if (CUR_YOUTH_.indexOf(o) >= 0 && /^(5th Sunday|No classes)/i.test(String(r[col.Lesson] || ''))) off[o + '|' + dd] = 1; });
+    var months = {}; all.forEach(function (r) { var dd = ds(r[col.Date]); if (dd >= from) months[curYm_(dd)] = 1; });
+    Object.keys(months).forEach(function (ym) {
+      ctx.fast[ym] = curFast_(ym, stake);
+      CUR_YOUTH_.forEach(function (o) { ctx.slots[o + '|' + ym] = curSundaysOf_(ym).filter(function (dd) { return !curGenConf_(dd) && !stake[dd] && !off[o + '|' + dd]; }); });
+    });
+    var changed = 0;
+    all.forEach(function (r) {
+      var dd = ds(r[col.Date]); if (dd < from) return;
+      var cur = String(r[col.Lesson] || ''); if (cur && !CUR_AUTO_.test(cur)) return;
+      var link = col.Link >= 0 ? String(r[col.Link] || '') : '';
+      if (link && !/churchofjesuschrist\.org/.test(link)) return;
+      var got = curLesson_(String(r[col.Organization]), String(r[col.Class] || ''), dd, cur, ctx); if (!got) return;
+      if (got.lesson !== cur || (col.Link >= 0 && got.link !== link)) { r[col.Lesson] = got.lesson; if (col.Link >= 0) r[col.Link] = got.link; changed++; }
+    });
+    if (vals.length) {
+      sh.getRange(2, col.Lesson + 1, vals.length, 1).setValues(vals.map(function (r) { return [r[col.Lesson]]; }));
+      if (col.Link >= 0) sh.getRange(2, col.Link + 1, vals.length, 1).setValues(vals.map(function (r) { return [r[col.Link]]; }));
+    }
+    if (added.length) sh.getRange(sh.getLastRow() + 1, 1, added.length, lastCol).setValues(added);
+    bump_('Teaching');
+    return changed + ' lessons set' + (added.length ? ' · ' + added.length + ' class Sundays added' : '');
+  } finally { lock.releaseLock(); }
+}
+/* What this month and the next two look like, for the Lesson schedule screen. */
+ACTIONS.curriculum = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.leader || me.roles.teacher || me.roles.clerk || me.roles.admin)) throw new Error('The lesson plan is for leaders and teachers.');
+  var stake = curStakeConf_(), t = today_(), out = [];
+  for (var i = 0; i < 3; i++) {
+    var m = new Date(t.getFullYear(), t.getMonth() + i, 1), ym = ymd_(m).slice(0, 7), sun = curSundaysOf_(ym);
+    out.push({ ym: ym, chapter: CUR_FSY_[m.getMonth()], link: curFsyLink_(ym, ''), fast: curFast_(ym, stake), topics: [CUR_TOPICS_[ym] ? CUR_TOPICS_[ym][0] : (PropertiesService.getScriptProperties().getProperty('fsy:' + ym + ':2') || ''), CUR_TOPICS_[ym] ? CUR_TOPICS_[ym][1] : (PropertiesService.getScriptProperties().getProperty('fsy:' + ym + ':3') || '')],
+      noClass: sun.filter(function (d) { return curGenConf_(d) || stake[d]; }).map(function (d) { return { date: d, why: curGenConf_(d) ? 'General conference' : 'Stake conference' }; }) });
+  }
+  return { months: out, cfm: curCfm_(ymd_(nextSunday_(t))), gc: CUR_GC_LINK_ };
+};
+ACTIONS.lessonPlanNow = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.admin)) throw new Error('The bishopric or the executive secretary refreshes the lesson plan.');
+  return { result: lessonPlan_() };
+};
 
 
 /* ================= Import: add rows from an uploaded workbook (File › Import › Insert new sheets) ================= */
