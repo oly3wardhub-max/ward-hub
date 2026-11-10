@@ -125,7 +125,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.13.1';
+var VERSION = '2.13.2';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -4427,8 +4427,18 @@ function importSheet_(sh, tab, d) {
   }
   if (tab === 'Groups') { // lists like Cleaning are replaced as a whole, so they never double up
     var kinds = {}; rows.forEach(function (r) { if (/^(Cleaning|Flags|Other|Dinner group)$/.test(r.Kind || '')) kinds[r.Kind] = 1; });
-    var gsh = sheet_('Groups'); rows_('Groups').filter(function (g) { return kinds[g.Kind]; }).sort(function (x, y) { return y._r - x._r; }).forEach(function (g) { gsh.deleteRow(g._r); });
-    bump_('Groups');
+    if (Object.keys(kinds).length) { // rewrite the tab once instead of deleting row by row (slow on a big spreadsheet)
+      var gsh = sheet_('Groups'), gl = gsh.getLastRow(), gc = gsh.getLastColumn();
+      if (gl >= 2) {
+        var gh = gsh.getRange(1, 1, 1, gc).getValues()[0].map(String), kc = gh.indexOf('Kind'), gv = gsh.getRange(2, 1, gl - 1, gc).getValues();
+        var keep = gv.filter(function (r) { return !kinds[String(r[kc])]; });
+        if (keep.length < gv.length) {
+          var lock = LockService.getScriptLock(); lock.waitLock(30000);
+          try { gsh.getRange(2, 1, gl - 1, gc).clearContent(); if (keep.length) gsh.getRange(2, 1, keep.length, gc).setValues(keep); } finally { lock.releaseLock(); }
+        }
+      }
+      bump_('Groups');
+    }
   }
   /* What's already there, compared on the columns this import sheet has (not the ID, and not yes/no or JSON columns). */
   var keyCols = head.filter(function (h) { return h && h !== idCol && types[h] && types[h] !== 'bool' && types[h] !== 'json' && h !== 'Replace'; });
