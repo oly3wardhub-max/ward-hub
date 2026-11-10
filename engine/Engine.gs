@@ -1259,7 +1259,7 @@ ACTIONS.forLcr = function (req, me) {
 
 /* ---------- LCR paste: members or callings ---------- */
 function parseTable_(text) {
-  var lines = String(text || '').replace(/\r/g, '').split('\n').map(function (l) { return l.replace(/ /g, ' '); }).filter(function (l) { return l.trim(); });
+  var lines = String(text || '').replace(/\r/g, '').split('\n').map(function (l) { return l.replace(/\u00a0/g, ' '); }).filter(function (l) { return l.trim(); });
   var split = function (l) { return l.indexOf('\t') >= 0 ? l.split('\t') : l.split(/\s{2,}/); };
   var hi = -1, head = [];
   for (var i = 0; i < Math.min(lines.length, 20); i++) { var c = split(lines[i]).map(function (x) { return x.trim().toLowerCase(); }); if (c.indexOf('name') >= 0 && c.length >= 3) { hi = i; head = c; break; } }
