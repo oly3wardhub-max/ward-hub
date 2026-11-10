@@ -454,21 +454,23 @@
   }
 
   /* =========================================================================== 12. Picture for a group text (made on this phone; nothing is uploaded) */
-  const GR = { title: '', date: '', time: '', place: '', theme: 0, photo: null };
+  const GR = { kicker: '', title: '', date: '', time: '', place: '', note: '', theme: 0, photo: null };
   const THEMES = [['#1F3A93', '#5856D6'], ['#A8834A', '#5C4422'], ['#34C759', '#0A6E3A'], ['#FF2D55', '#8E1F3A'], ['#FF9500', '#C93400'], ['#30B0C7', '#0B4F6C'], ['#1C1C1E', '#3A3A3C']];
   WH.routes.graphic = {
     view(args) {
-      const q = new URLSearchParams(decodeURIComponent((args || [])[0] || '')); ['title', 'date', 'time', 'place'].forEach(k => { if (q.get(k)) GR[k] = q.get(k); });
+      const q = new URLSearchParams(decodeURIComponent((args || [])[0] || '')); if (q.get('title')) ['kicker', 'note'].forEach(k => { GR[k] = ''; }); ['kicker', 'title', 'date', 'time', 'place', 'note'].forEach(k => { if (q.get(k)) GR[k] = q.get(k); }); GR.fromMsg = !!q.get('msg');
       const { esc } = WH;
       WH.screen('Picture for a text', 'Make it here, then attach it to your group text', `<canvas id="grC" width="1080" height="1080" style="width:100%;max-width:420px;display:block;margin:0 auto;border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.15)"></canvas>
-        <div class="list" style="margin-top:14px"><div class="field"><label>Title</label><input class="grin" data-k="title" value="${esc(GR.title)}" placeholder="Ward Christmas party"></div>
+        <div class="list" style="margin-top:14px"><div class="field"><label>Heading</label><input class="grin" data-k="kicker" value="${esc(GR.kicker)}" placeholder="Youth activity"></div><div class="field"><label>Title</label><input class="grin" data-k="title" value="${esc(GR.title)}" placeholder="Ward Christmas party"></div>
         <div class="field"><label>Date</label><input class="grin" data-k="date" value="${esc(GR.date)}" placeholder="Friday, December 12"></div>
         <div class="field"><label>Time</label><input class="grin" data-k="time" value="${esc(GR.time)}" placeholder="6:30 PM"></div>
-        <div class="field"><label>Place</label><input class="grin" data-k="place" value="${esc(GR.place)}" placeholder="Cultural hall"></div></div>
+        <div class="field"><label>Place</label><input class="grin" data-k="place" value="${esc(GR.place)}" placeholder="Cultural hall"></div>
+        <div class="field"><label>Note</label><input class="grin" data-k="note" value="${esc(GR.note)}" placeholder="Bring a friend!"></div></div>
         <div class="section-h"><span>Background</span></div><div class="seg" style="flex-wrap:wrap">${THEMES.map((t, i) => `<button class="${!GR.photo && GR.theme === i ? 'on' : ''}" data-act="grTheme" data-i="${i}" aria-label="Color ${i + 1}"><span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,${t[0]},${t[1]});vertical-align:middle"></span></button>`).join('')}</div>
         <div class="btns"><label class="btn gray" style="text-align:center">Use a photo<input type="file" accept="image/*" id="grF" style="display:none"></label>${GR.photo ? '<button class="btn gray" data-act="grNoPhoto">No photo</button>' : ''}</div>
-        <div class="btns"><button class="btn" data-act="grShare">Share</button><button class="btn gray" data-act="grSave">Save picture</button></div>
-        <p class="foot">The picture is made on your phone; nothing is uploaded. Share sends it to Messages, or save it and attach it to the group text.</p>`, back);
+        <div class="btns"><button class="btn" data-act="grLink">${GR.fromMsg ? 'Add the picture to my text' : 'Add to a group text'}</button></div>
+        <div class="btns"><button class="btn gray" data-act="grShare">Share picture…</button><button class="btn gray" data-act="grSave">Save picture</button></div>
+        <p class="foot"><b>Two easy ways:</b> 1) "${GR.fromMsg ? 'Add the picture to my text' : 'Add to a group text'}" puts a link to the picture in your message; most phones show the picture right in the text. 2) Or Share or Save it, open the group text, and attach it.</p>`, back);
       document.querySelectorAll('.grin').forEach(i => i.addEventListener('input', () => { GR[i.dataset.k] = i.value; grDraw(); }));
       document.getElementById('grF').addEventListener('change', e => {
         const file = e.target.files && e.target.files[0]; if (!file) return;
@@ -493,14 +495,15 @@
     }
     x.fillStyle = '#fff'; x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = GR.photo ? 12 : 0;
     const ward = ((WH.S.boot && WH.S.boot.settings) || {}).ward_name || '', pad = 90;
-    x.font = `600 34px ${font}`; x.globalAlpha = 0.85; x.fillText(ward.toUpperCase(), pad, 130); x.globalAlpha = 1;
+    x.font = `600 34px ${font}`; x.globalAlpha = 0.85; x.fillText((GR.kicker ? GR.kicker + '  ·  ' : '').toUpperCase() + ward.toUpperCase(), pad, 130); x.globalAlpha = 1;
     let size = 112; x.font = `800 ${size}px ${font}`; let lines = grWrap(x, GR.title || 'Your title', W - pad * 2);
     while (lines.length > 4 && size > 60) { size -= 8; x.font = `800 ${size}px ${font}`; lines = grWrap(x, GR.title || 'Your title', W - pad * 2); }
-    const info = [GR.date, GR.time].filter(Boolean).join(' · '), place = GR.place || '';
-    let y = H - pad - (place ? 70 : 0) - (info ? 80 : 0) - (lines.length - 1) * size * 1.05;
+    const info = [GR.date, GR.time].filter(Boolean).join(' · '), place = GR.place || '', note = GR.note || '';
+    let y = H - pad - (note ? 70 : 0) - (place ? 70 : 0) - (info ? 80 : 0) - (lines.length - 1) * size * 1.05;
     lines.forEach(l => { x.fillText(l, pad, y); y += size * 1.05; });
     y += 10; x.font = `600 54px ${font}`; if (info) { x.fillText(info, pad, y + 30); y += 80; }
-    x.font = `400 46px ${font}`; x.globalAlpha = 0.9; if (place) x.fillText(place, pad, y + 26); x.globalAlpha = 1; x.shadowBlur = 0;
+    x.font = `400 46px ${font}`; x.globalAlpha = 0.9; if (place) { x.fillText(place, pad, y + 26); y += 70; } x.globalAlpha = 1;
+    if (note) { x.font = `italic 400 44px Georgia, serif`; x.globalAlpha = 0.92; x.fillText(note, pad, y + 26); x.globalAlpha = 1; } x.shadowBlur = 0;
   }
   const grBlob = () => new Promise(res => document.getElementById('grC').toBlob(res, 'image/png'));
   const grName = () => (String(GR.title || 'picture').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'picture') + '.png';
@@ -511,6 +514,16 @@
       const b = await grBlob(), file = new File([b], grName(), { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: GR.title || 'Picture' }); } catch (e) { } }
       else WH.act.grSave();
+    },
+    async grLink(el) {
+      el.innerHTML = '<span class="spin"></span>';
+      try {
+        const b = await grBlob(), data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(b); });
+        const r = await WH.call('textPicture', { data });
+        WH.store.set('msgPic', r.url);
+        if (!GR.fromMsg) WH.store.set('msgDraft', [GR.kicker, GR.title].filter(Boolean).join(': ') + (GR.date ? ' ' + GR.date : '') + (GR.time ? ' at ' + GR.time : '') + (GR.place ? ', ' + GR.place : '') + '.' + (GR.note ? ' ' + GR.note : ''));
+        location.hash = '#/x/messages';
+      } catch (e) { WH.toast(e.message); el.textContent = 'Try again'; }
     },
     async grSave() { const b = await grBlob(), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = grName(); document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 30000); }
   });

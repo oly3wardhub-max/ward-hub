@@ -56,7 +56,7 @@
       let r; try { r = await WH.call('event', { id: el.dataset.id }); } catch (e) { WH.toast(e.message); return; }
       const e = r.event, date = el.dataset.date, { esc } = WH;
       if (!r.canEdit) {
-        WH.openSheet(`<header><span style="min-width:64px"></span><h2>${esc(e.Title)}</h2><button class="link r" data-act="close">Done</button></header><div class="list">${WH.kv('Date', WH.long(date))}${WH.kv('Time', [e.Start, e.End].filter(Boolean).join('–'))}${WH.kv('Place', e.Place)}${WH.kv('Organization', e.Organization)}${e.Repeat ? WH.kv('Repeats', e.Repeat) : ''}</div>${e.Notes ? `<p class="foot">${esc(e.Notes)}</p>` : ''}`);
+        WH.openSheet(`<header><span style="min-width:64px"></span><h2>${esc(e.Title)}</h2><button class="link r" data-act="close">Done</button></header><div class="list">${WH.kv('Date', WH.long(date))}${WH.kv('Time', [e.Start, e.End].filter(Boolean).join('–'))}${WH.kv('Place', e.Place)}${WH.kv('Organization', e.Organization)}${e.Repeat ? WH.kv('Repeats', e.Repeat) : ''}</div>${e.Notes ? `<p class="foot">${esc(e.Notes)}</p>` : ''}${WH.isBish() || WH.can('leader') || WH.can('teacher') ? `<div class="btns"><button class="btn gray" data-act="evPic" data-h="#/x/graphic/${encodeURIComponent(new URLSearchParams({ kicker: /Young|Youth/.test(e.Organization || '') ? 'Youth activity' : (e.Organization || ''), title: e.Title || '', date: WH.fmt(date, { weekday: 'long', month: 'short', day: 'numeric' }), time: e.Start || '', place: e.Place || '' }).toString())}">Picture for a text</button></div>` : ''}`);
         return;
       }
       const extra = e.Repeat ? `<div class="btns" style="margin:0 0 12px"><button class="btn gray" id="skipone">Not happening ${esc(WH.fmt(date, { month: 'short', day: 'numeric' }))}</button></div>` : '';
@@ -97,4 +97,5 @@
       try { await WH.call('buildingDecide', { id: el.dataset.id, decision: el.dataset.d }); WH.closeSheet(); WH.toast('Done', true); WH.routes.building.view(); } catch (e) { WH.toast(e.message); }
     }
   });
+  WH.act = WH.act || {}; WH.act.evPic = el => { WH.closeSheet(); location.hash = el.dataset.h; };
 })();

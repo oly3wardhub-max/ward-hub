@@ -68,6 +68,7 @@ var SCHEMA = {"tabs":[
   ["publish_minutes_before", "Program", "Publish the program this many minutes before the meeting (Sundays)", "15", "Republishes if anything changed since"],
   ["zoom_link", "Program", "Zoom link for sacrament meeting (blank = none)", "", "Shown on the online program, with its own QR code"],
   ["show_birthdays", "Program", "Show birthdays on the program", "Yes", ""],
+  ["ward_conference_month", "Program", "Ward conference: the last Sunday of this month (blank = set it by hand)", "January", ""],
   ["program_welcome", "Program", "Welcome for visitors at the top of the program (blank = the standard welcome)", "", ""],
   ["program_classes", "Program", "Show the class schedule after sacrament meeting", "Yes", ""],
   ["program_tithing", "Program", "Tithing declaration link on the online program (Auto = while open tithing times are posted)", "Auto", "Auto, Yes or No"],
@@ -130,7 +131,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.15.0';
+var VERSION = '2.16.0';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -701,6 +702,7 @@ function setUp() {
   var have = {}; rows_('Settings').forEach(function (r) { have[r.Key] = 1; });
   SCHEMA.settings.forEach(function (s) { if (!have[s[0]]) save_(null, 'Settings', { Key: s[0], Section: s[1], Setting: s[2], Value: s[3], Help: s[4] }, { system: true, quiet: true }); });
   try { repairs_(); } catch (e) { log_('Hub', 'repair', '', '', String(e)); }
+  try { sundayTypes_(); } catch (e) { log_('Hub', 'sundays', '', '', String(e)); }
   try { CUR_NOFETCH_ = true; lessonPlan_(); } catch (e) { log_('Hub', 'lesson plan', '', '', String(e)); } finally { CUR_NOFETCH_ = false; }
   try { installJobs_(); } catch (e) { log_('Hub', 'jobs', '', '', String(e)); }
   var blank = ss_().getSheetByName('Sheet1'); if (blank && blank.getLastRow() === 0 && ss_().getSheets().length > 1) ss_().deleteSheet(blank);
@@ -928,7 +930,8 @@ ACTIONS.audiences = function (req, me) {
     if (!grp) { grp = { org: g.Organization, id: id, label: '★ ' + g.Group, members: [], saved: g.Group }; groups.push(grp); }
     grp.members.push(m(p));
   });
-  return { groups: groups, me: first_(me.name), orgs: orgs };
+  var acts = []; try { acts = textActivities_(orgs); } catch (e) { }
+  return { groups: groups, me: first_(me.name), orgs: orgs, activities: acts };
 };
 
 /* Save (or replace) a text group. */
@@ -1720,6 +1723,7 @@ function jobRecord_(name, fn) {
 function nightly() {
   jobRecord_('sources', readSources_);
   jobRecord_('meetings', function () { ensureMeetings_(); return 'ok'; });
+  jobRecord_('sundays', sundayTypes_);
   jobRecord_('lessons', lessonPlan_);
   jobRecord_('names', nameTags_);
   jobRecord_('publish', schedulePublish_);
@@ -1728,6 +1732,7 @@ function nightly() {
   jobRecord_('transcripts', cleanTranscripts_);
   jobRecord_('permission forms', cleanPermits_);
   jobRecord_('newsletter pictures', cleanNewsletterImages_);
+  jobRecord_('text pictures', cleanTextPictures_);
   jobRecord_('tidy', tidy_);
 }
 /* Every linked source, every night: calendars and iCal links → Events; Google Sheets and Docs → see 85_sources. Weekly ones run on Mondays. */
@@ -4395,6 +4400,7 @@ function repairs_() {
       });
     }
   });
+  try { tidyEventTitles_(); } catch (e) { log_('Hub', 'repair', 'Events', '', String(e)); }
   try { nameTags_(); } catch (e) { log_('Hub', 'repair', 'People', '', String(e)); }
   try { flagCrewsFromNotes_(); } catch (e) { log_('Hub', 'repair', 'Flag crews', '', String(e)); }
 }
@@ -4460,7 +4466,8 @@ var CUR_NOFETCH_ = false; // setUp skips reading lesson pages so it stays quick;
 
 function curYm_(d) { return d.slice(0, 7); }
 function curSundaysOf_(ym) { var p = ym.split('-'), d = new Date(+p[0], +p[1] - 1, 1), out = []; while (d.getDay() !== 0) d.setDate(d.getDate() + 1); while (d.getMonth() === +p[1] - 1) { out.push(ymd_(d)); d.setDate(d.getDate() + 7); } return out; }
-function curGenConf_(d) { var m = +d.slice(5, 7); return (m === 4 || m === 10) && +d.slice(8, 10) <= 7; }
+/* General conference: the first Saturday and Sunday of April and October, so its Sunday is the 2nd through the 8th. */
+function curGenConf_(d) { var m = +d.slice(5, 7), day = +d.slice(8, 10); return (m === 4 || m === 10) && day >= 2 && day <= 8 && parseYmd_(d).getDay() === 0; }
 function curStakeConf_() {
   var out = {};
   rows_('Events').forEach(function (e) {
@@ -4597,6 +4604,85 @@ ACTIONS.lessonPlanNow = function (req, me) {
   if (!(isBishopric_(me) || me.roles.admin)) throw new Error('The bishopric or the executive secretary refreshes the lesson plan.');
   return { result: lessonPlan_() };
 };
+
+
+/* ================= Sunday types the calendar decides =================
+   General conference: the first Saturday and Sunday of April and October.
+   Stake conference: from the stake conference event on the calendar.
+   Fast and testimony meeting: the first Sunday of the month that isn't a conference Sunday.
+   Ward conference: the last Sunday in January, filled in for the coming January only (setting ward_conference_month, blank to turn off).
+   Runs in setUp and each night for the next 14 months. It only fills Sundays that are blank or "Regular" (and corrects a
+   Sunday marked fast or regular that is really general conference); anything else the bishopric chose stays. */
+function sundayTypes_() {
+  var t = today_(), stake = curStakeConf_(), have = {}, n = 0;
+  rows_('Sundays').forEach(function (s) { have[s.Date] = s; });
+  var wcMon = String(setting_('ward_conference_month') == null ? 'January' : setting_('ward_conference_month')).trim().slice(0, 3).toLowerCase();
+  var wcM = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 }[wcMon];
+  for (var i = 0; i < 14; i++) {
+    var first = new Date(t.getFullYear(), t.getMonth() + i, 1), ym = ymd_(first).slice(0, 7), suns = curSundaysOf_(ym), want = {};
+    suns.forEach(function (d) { if (curGenConf_(d)) want[d] = 'General Conference'; else if (stake[d]) want[d] = 'Stake Conference'; });
+    var fast = suns.filter(function (d) { return !want[d]; })[0]; if (fast) want[fast] = 'Fast & Testimony';
+    /* only the coming one, a few months ahead; change it on the Sunday tab if the stake picks another date */
+    if (wcM != null && first.getMonth() === wcM && i <= 3) { var last = suns[suns.length - 1]; if (last && !want[last]) want[last] = 'Ward Conference'; }
+    Object.keys(want).forEach(function (d) {
+      if (d < ymd_(t)) return;
+      var cur = have[d], type = cur ? String(cur.Type || '') : '';
+      var ok = !cur || !type || type === 'Regular' || (want[d] === 'General Conference' && type === 'Fast & Testimony');
+      if (!ok || type === want[d]) return;
+      save_(null, 'Sundays', { Date: d, Type: want[d] }, { system: true, quiet: true }); n++;
+    });
+    /* a Sunday still marked fast that general conference moved off the first Sunday goes back to regular */
+    suns.forEach(function (d) { var c = have[d]; if (c && c.Type === 'Fast & Testimony' && want[d] !== 'Fast & Testimony' && d >= ymd_(t) && !want[d]) { save_(null, 'Sundays', { Date: d, Type: 'Regular' }, { system: true, quiet: true }); n++; } });
+  }
+  return n ? n + ' Sundays set' : 'ok';
+}
+
+
+/* ================= Activity texts: the week's activities for the Messages screen, and a picture link for a group text ================= */
+/* Activities in the next 10 days for each organization this person texts (youth leaders also see combined Youth events). */
+function textActivities_(orgs) {
+  var t = ymd_(today_()), end = ymd_(addDays_(today_(), 10)), out = [];
+  var want = {}; orgs.forEach(function (o) { want[o] = 1; if (o === 'Young Women' || o === 'Young Men') want.Youth = 1; });
+  rows_('Events').forEach(function (e) {
+    if (!want[e.Organization] || e.Status === 'Cancelled' || e.Status === 'Pending' || !e.Date || e.Date < t || e.Date > end) return;
+    if (/^no\b|no activit/i.test(String(e.Title || ''))) return;
+    var start = e.Start || (/Young|Youth/.test(e.Organization) && parseYmd_(e.Date).getDay() === 3 ? (setting_('youth_activity_time') || '7:00 PM') : ''); // Wednesday nights default to the usual time
+    out.push({ org: e.Organization, date: e.Date, start: start, title: cleanTitle_(e.Title), place: e.Place || '' });
+  });
+  return out.sort(function (a, b) { return (a.date + timeKey_(a.start)).localeCompare(b.date + timeKey_(b.start)); }).slice(0, 12);
+}
+/* "Wed, Nov 11 – Young Men quorum activities: …" (titles from the v1 youth calendar) without the date in front. */
+function cleanTitle_(t) { return String(t || '').replace(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s+[A-Z][a-z]{2,8}\.?\s+\d{1,2}\s*[–—-]\s*/, '').trim(); }
+
+/* A picture made on the phone for a group text: saved to Drive and shared by link, so it shows right in the text on most phones.
+   Leaders, teachers and the bishopric; removed after 60 days. */
+var TXT_IMG_FOLDER = 'Ward Hub text pictures';
+ACTIONS.textPicture = function (req, me) {
+  if (!(isBishopric_(me) || me.roles.leader || me.roles.teacher)) throw new Error('Pictures for texts are for leaders and teachers.');
+  var data = String(req.data || '').replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
+  if (!data) throw new Error('No picture came through. Try again.');
+  if (data.length * 3 / 4 > 6e6) throw new Error('That picture is too big. Try again with a smaller photo.');
+  var bytes = Utilities.base64Decode(data), png = bytes.length > 4 && (bytes[0] & 255) === 0x89 && bytes[1] === 0x50, jpg = bytes.length > 3 && (bytes[0] & 255) === 0xFF && (bytes[1] & 255) === 0xD8;
+  if (!png && !jpg) throw new Error('That isn\'t a picture.');
+  var it = DriveApp.getFoldersByName(TXT_IMG_FOLDER), folder = it.hasNext() ? it.next() : DriveApp.createFolder(TXT_IMG_FOLDER);
+  var f = folder.createFile(Utilities.newBlob(bytes, png ? 'image/png' : 'image/jpeg', 'Text picture ' + ymd_(today_()) + ' ' + Utilities.getUuid().slice(0, 6) + (png ? '.png' : '.jpg')));
+  try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); }
+  catch (e) { try { f.setTrashed(true); } catch (x) {} throw new Error('Google Drive would not share the picture by link. Use Share picture instead and attach it to the text.'); }
+  log_(me.name, 'picture', 'Messages', '', Math.round(bytes.length / 1024) + ' KB');
+  return { url: 'https://lh3.googleusercontent.com/d/' + f.getId() };
+};
+function cleanTextPictures_() {
+  var it = DriveApp.getFoldersByName(TXT_IMG_FOLDER); if (!it.hasNext()) return 'no pictures yet';
+  var cut = addDays_(today_(), -60), files = it.next().getFiles(), n = 0;
+  while (files.hasNext()) { var f = files.next(); if (f.getDateCreated() < cut) { f.setTrashed(true); n++; } }
+  return n + ' old pictures removed';
+}
+/* setUp: tidy titles brought over from the v1 youth calendar. */
+function tidyEventTitles_() {
+  var n = 0;
+  rows_('Events').forEach(function (e) { var t = cleanTitle_(e.Title); if (t && t !== e.Title) { save_(null, 'Events', { ID: e.ID, Title: t }, { system: true, quiet: true }); n++; } });
+  return n;
+}
 
 
 /* ================= Import: add rows from an uploaded workbook (File › Import › Insert new sheets) ================= */
