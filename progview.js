@@ -30,8 +30,13 @@ window.WHProgram = (function () {
     }
     if (p.theme && (p.theme.text || p.theme.source)) h += `<div class="pg-kicker">Thought for the week</div><blockquote>${p.theme.text ? '“' + esc(p.theme.text.replace(/^[“"]|[”"]$/g, '')) + '”' : ''}<cite>— ${esc(p.theme.source)}</cite></blockquote>`;
     if (p.birthdays && p.birthdays.length) h += `<div class="pg-kicker">Happy birthday this week</div><p>${p.birthdays.map(esc).join(', ')}</p>`;
-    if (p.missionaries && p.missionaries.length) h += `<div class="pg-kicker">Serving missions</div><p>${p.missionaries.map(m => esc(m.name) + (m.mission ? ` <span class="pg-dim">· ${esc(m.mission)}</span>` : '')).join('<br>')}</p>`;
-    if (qr) h += `<div class="pg-qr">${qr}<div>Scan for the online program</div></div>`;
+    if (p.missionaries && p.missionaries.length) {
+      const mail = !qr; // email links on the online program only
+      h += `<div class="pg-kicker">Serving missions</div><p>${p.missionaries.map(m => esc(m.name) + (m.mission ? ` <span class="pg-dim">· ${esc(m.mission)}</span>` : '') + (mail && m.email ? `<br><a class="pg-mail" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Hello from the ' + (p.ward || 'ward'))}">Email ${esc(m.short || m.name)}</a>` : '')).join('<br>')}</p>`;
+      if (mail && p.missionaries.some(m => m.email)) h += '<p class="pg-dim">They love hearing from home. Write to them!</p>';
+    }
+    if (qr) { const what = ['the online program', (p.missionaries || []).some(m => m.email) ? 'emailing our missionaries' : '', (p.links || []).some(l => l.key === 'tithe') ? 'tithing declaration' : '', (p.links || []).some(l => l.key === 'meet') ? 'meeting with the bishop' : ''].filter(Boolean);
+      h += `<div class="pg-qr">${qr}<div>Scan for ${what.length > 1 ? what.slice(0, -1).join(', ') + ' and ' + what[what.length - 1] : what[0]}</div></div>`; }
     if (p.footer) h += `<p class="pg-foot">${esc(p.footer)}</p>`;
     return h;
   }
@@ -60,6 +65,7 @@ window.WHProgram = (function () {
   .pg blockquote cite{display:block;font-style:normal;font-size:12px;color:#555;margin-top:4px}
   .pg-dim{color:#777}.pg-qr{text-align:center;margin-top:16px;font-size:11px;color:#555}.pg-qr svg,.pg-qr img{width:96px;height:96px}
   .pg-foot{font-size:12px!important;color:#555}
+  .pg-mail{font-size:13px}
   @media (prefers-color-scheme:dark){.pg-online{color:#f2f2f7}.pg-online .pg-ward,.pg-online .pg-meeting,.pg-online .pg-head,.pg-online .pg-org,.pg-online .pg-title{color:#8FA8FF}.pg-online .pg-sub,.pg-online .pg-date,.pg-online .pg-dim,.pg-online cite{color:#bbb}}
   .pg-print{width:7.6in;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:0 .45in;font-size:13px}
   .pg-print>div+div{border-left:1px dashed #ccc;padding-left:.35in}
@@ -69,7 +75,7 @@ window.WHProgram = (function () {
   `;
   function online(p) {
     return `<div class="pg pg-online">${header(p)}${order(p)}<div class="pg-rule" style="margin-top:20px"></div>${side(p, '')}
-      ${p.zoom ? `<p style="margin-top:18px"><a href="${esc(p.zoom)}">Join on Zoom</a></p>` : ''}${p.building ? `<p style="margin-top:18px"><a href="${esc(p.building)}">Request the building</a></p>` : ''}</div>`;
+      ${p.zoom ? `<p style="margin-top:18px"><a href="${esc(p.zoom)}">Join on Zoom</a></p>` : ''}${(p.links || []).map(l => `<p style="margin-top:18px"><a href="${esc(l.url)}">${esc(l.label)}</a></p>`).join('')}${p.building ? `<p style="margin-top:18px"><a href="${esc(p.building)}">Request the building</a></p>` : ''}</div>`;
   }
   function print(p, qrSvg) { return `<div class="pg pg-print"><div>${header(p)}${order(p)}</div><div>${side(p, qrSvg)}</div></div>`; }
   function qr(url) {
