@@ -125,7 +125,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.13.3';
+var VERSION = '2.13.4';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -165,7 +165,17 @@ function handle_(req) {
 /* ---------------- schema helpers ---------------- */
 function tabDef_(name) { for (var i = 0; i < SCHEMA.tabs.length; i++) if (SCHEMA.tabs[i].name === name) return SCHEMA.tabs[i]; return null; }
 function ss_() { return SpreadsheetApp.getActive(); }
-function tz_() { return setting_('time_zone') || ss_().getSpreadsheetTimeZone() || 'America/Denver'; }
+/* The time zone is read once per run. While Settings itself is being read, the spreadsheet's own zone is used, so a date or
+   time sitting in Settings can't make the read start over again and again (that loop is what timed runs out). */
+var TZ_ = null, TZ_BUSY_ = false;
+function tz_() {
+  if (TZ_) return TZ_;
+  var base = function () { try { return ss_().getSpreadsheetTimeZone() || 'America/Denver'; } catch (e) { return 'America/Denver'; } };
+  if (TZ_BUSY_) return base();
+  TZ_BUSY_ = true;
+  try { TZ_ = setting_('time_zone') || base(); } finally { TZ_BUSY_ = false; }
+  return TZ_;
+}
 function sheet_(name) {
   var sh = ss_().getSheetByName(name);
   if (!sh) { sh = ss_().insertSheet(name); var d = tabDef_(name); if (d) { sh.getRange(1, 1, 1, d.cols.length).setValues([d.cols.map(function (c) { return c[0]; })]); sh.setFrozenRows(1); } }
@@ -174,7 +184,7 @@ function sheet_(name) {
 function ymd_(d) { return Utilities.formatDate(d, tz_(), 'yyyy-MM-dd'); }
 function toOut_(v, type) {
   if (v instanceof Date) {
-    if (type === 'time') return Utilities.formatDate(v, tz_(), 'h:mm a');
+    if (type === 'time' || v.getFullYear() < 1901) return Utilities.formatDate(v, tz_(), 'h:mm a'); // Sheets keeps a time of day as a date in 1899
     if (type === 'datetime') return Utilities.formatDate(v, tz_(), "yyyy-MM-dd'T'HH:mm");
     return ymd_(v);
   }
@@ -188,6 +198,7 @@ function toIn_(v, type) {
   if ((type === 'date' || type === 'dateid') && /^\d{4}-\d\d-\d\d$/.test(String(v))) { var p = String(v).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
   if (type === 'number') return v === '' ? '' : Number(v);
   if (type === 'json' && typeof v !== 'string') return JSON.stringify(v);
+  if ((type === 'text' || type === 'key') && /^\s*\d{1,2}:\d\d\s*([ap]\.?m\.?)?\s*$/i.test(String(v))) return "'" + String(v).trim(); // keep "9:30 AM" as words, not a time value
   return String(v).slice(0, 5000);
 }
 
@@ -226,7 +237,7 @@ function rows_(name) {
   } catch (e) {}
   return (MEMO_[ck] = out);
 }
-function bump_(name) { var p = PropertiesService.getScriptProperties(); p.setProperty('v:' + name, Date.now().toString(36) + Math.random().toString(36).slice(2, 6)); if (name === 'Settings') SET_CACHE_ = null; }
+function bump_(name) { var p = PropertiesService.getScriptProperties(); p.setProperty('v:' + name, Date.now().toString(36) + Math.random().toString(36).slice(2, 6)); if (name === 'Settings') { SET_CACHE_ = null; TZ_ = null; } }
 
 /* ---------------- settings ---------------- */
 var SET_CACHE_ = null;
