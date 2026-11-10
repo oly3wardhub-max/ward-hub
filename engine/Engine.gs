@@ -700,7 +700,7 @@ function showMyLink() {
 }
 
 /* Spreadsheet menu: Ward Hub › Back up now. */
-function backupNow() { var r = backup_(true); try { SpreadsheetApp.getUi().alert('Backup: ' + r + '. Find it in Google Drive › Ward Hub backups.'); } catch (e) {} return r; }
+function backupNow() { var r = backup_(true); try { ss_().toast('Backup: ' + r + '. Find it in Google Drive › Ward Hub backups.'); } catch (e) {} return r; }
 
 
 /* ================= Program: online (public) and printed ================= */
@@ -4413,7 +4413,9 @@ function mergeImports() {
     ss_().deleteSheet(sh); done.push(tab + ': ' + n);
   });
   log_('Hub', 'import', '', '', done.join(', '));
-  try { SpreadsheetApp.getUi().alert(done.length ? 'Added ' + done.join(', ') : 'No sheets named "Import …" were found.'); } catch (e) {}
+  /* A toast, not an alert: an alert waits for OK, and if it's missed the run ends with "Exceeded maximum execution time" even though everything was saved. */
+  try { ss_().toast(done.length ? 'Added ' + done.join(', ') : 'No sheets named "Import …" were found.', 'Ward Hub', 15); } catch (e) {}
+  return done.join(', ');
   return done;
 }
 
