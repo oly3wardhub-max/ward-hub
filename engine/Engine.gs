@@ -131,7 +131,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.16.0';
+var VERSION = '2.16.1';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -1765,10 +1765,25 @@ function upsertEvents_(s, got) {
   var added = 0, changed = 0, held = s['Auto-approve'] !== true;
   got.forEach(function (g) {
     var cur = have[g.uid], row = { Date: g.date, 'End date': g.endDate || '', Start: g.start || '', End: g.end || '', Title: g.title, Organization: s.Organization || 'Ward', Place: g.place || '', Source: s.Kind + ': ' + s.Organization, 'Source ID': g.uid };
+    if (!cur) { var same = sameEvent_(g, s.Organization); if (same) { save_(null, 'Events', { ID: same.ID, 'Source ID': g.uid }, { system: true, quiet: true }); have[g.uid] = same; return; } } // already on the calendar (brought over earlier): link it, don't add it twice
     if (!cur) { row.Status = held ? 'Inbox' : 'Approved'; save_(null, 'Events', row, { system: true, quiet: true }); added++; }
     else if (cur.Date !== g.date || cur.Title !== g.title || cur.Start !== (g.start || '') || cur.Place !== (g.place || '')) { row.ID = cur.ID; save_(null, 'Events', row, { system: true, quiet: true }); changed++; }
   });
   return { added: added, changed: changed, held: held && added > 0 };
+}
+/* An event already on the calendar for the same day that is clearly the same thing (most of the words match). */
+var EV_STOP_ = { the: 1, a: 1, and: 1, of: 1, to: 1, in: 1, at: 1, for: 1, ym: 1, yw: 1, young: 1, men: 1, women: 1, youth: 1, combined: 1, activity: 1, activities: 1, quorum: 1, quorums: 1, individual: 1 };
+function evWords_(t) { var o = {}; cleanTitle_(t).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).forEach(function (w) { if (w.length > 1 && !EV_STOP_[w]) o[w] = 1; }); return o; }
+function sameEvent_(g, org) {
+  var a = evWords_(g.title), na = Object.keys(a).length; if (!na) return null;
+  var youth = /Young|Youth/.test(org || '');
+  return rows_('Events').filter(function (e) {
+    if (e.Date !== g.date || e['Source ID'] || e.Status === 'Cancelled') return false;
+    if (e.Organization !== org && !(youth && /Young|Youth/.test(e.Organization || ''))) return false;
+    var b = evWords_(e.Title), nb = Object.keys(b).length; if (!nb) return false;
+    var both = Object.keys(a).filter(function (w) { return b[w]; }).length;
+    return both >= Math.max(1, Math.ceil(0.6 * Math.min(na, nb)));
+  })[0] || null;
 }
 function parseIcs_(text, from, to) {
   var out = [], blocks = String(text || '').replace(/\r\n[ \t]/g, '').split('BEGIN:VEVENT').slice(1);
@@ -2824,6 +2839,38 @@ function gridEvents_(vals) {
   return out.length ? out : null;
 }
 
+/* ---------- a schedule laid out by rows of dates ----------
+   Like the youth activity calendar: each month has a heading row (Lesson Topic, Deacons, Teachers, Priests … Activity, Deacons,
+   Teachers, Priests, Activity Ideas) and rows that hold a Sunday date with its lesson and a Wednesday date with its activity.
+   Weeknight activities become calendar items ("Individual Quorums: Priests: Lunch - Kyle Oswald", "Combined YM/YW: First Aid");
+   Sunday lessons are left to the lesson plan, and "no activities", breaks and idea columns are skipped. Only dates from last
+   week on are read, so old tabs in the same file do nothing. */
+var DR_HEAD_ = /^(deacons?|teachers?|priests?|activity|activities|lesson topic|lesson|beehives|mia ?maids|laurels|builders( of faith)?|messengers( of hope)?|gatherers( of light)?|yw|ym|combined)$/i;
+function dateRowEvents_(vals) {
+  var from = ymd_(addDays_(today_(), -7)), out = [], labels = {}, defTime = setting_('youth_activity_time') || '7:00 PM';
+  vals.forEach(function (row) {
+    var heads = row.filter(function (c) { return DR_HEAD_.test(String(c == null ? '' : c).trim()); }).length;
+    if (heads >= 2 && !row.some(function (c) { return c instanceof Date; })) { labels = {}; row.forEach(function (c, j) { var k = String(c == null ? '' : c).trim(); if (k) labels[j] = k; }); return; }
+    var cols = []; row.forEach(function (c, j) { if (c instanceof Date && !isNaN(c)) cols.push(j); });
+    cols.forEach(function (j, idx) {
+      var d = row[j], date = ymd_(d); if (date < from || d.getDay() === 0) return;
+      var stop = idx + 1 < cols.length ? cols[idx + 1] : row.length, parts = [];
+      for (var k = j + 1; k < stop; k++) { var v = String(row[k] == null ? '' : row[k]).replace(/\s+/g, ' ').trim(); if (v && !/ideas?$/i.test(labels[k] || '')) parts.push({ label: labels[k] || '', text: v }); }
+      var skip = function (t) { return /^(no activit|no mutual|none\b|tbd\b|tba\b|fall break|spring break|family month|n\/a$)/i.test(t); };
+      parts = parts.filter(function (p) { return !skip(p.text); });
+      if (!parts.length) return;
+      var head = parts[0].text, rest = parts.slice(1), title;
+      if (!rest.length) title = head;
+      else if (/combined/i.test(head) && rest.length === 1) title = head + ': ' + rest[0].text;
+      else title = head + ': ' + rest.map(function (p) { return (p.label && !/^activit/i.test(p.label) && !/combined/i.test(head) ? p.label + ': ' : '') + p.text; }).join('; ');
+      var tm = title.match(/(?:^|[\s:,(-])(\d{1,2}):(\d\d)\s*(am|pm)?|\b(\d{1,2})\s*(am|pm)\b/i), start = '';
+      if (tm) { var h = +(tm[1] || tm[4]), mm = tm[2] || '00', ap = (tm[3] || tm[5] || '').toLowerCase(); if (h >= 1 && h <= 12) start = h + ':' + mm + ' ' + (ap ? (ap === 'pm' ? 'PM' : 'AM') : (h <= 11 ? 'PM' : 'PM')); }
+      out.push({ date: date, endDate: '', start: start || (d.getDay() === 3 ? defTime : ''), endTime: '', title: title.slice(0, 150), place: '' });
+    });
+  });
+  return out.length ? out : null;
+}
+
 /* ---------- linked Google Sheets: every tab, columns found by their headings ---------- */
 function sheetSource_(s) {
   var ss;
@@ -2834,7 +2881,7 @@ function sheetSource_(s) {
     if (sh.getLastRow() < 2) return;
     var vals = sh.getRange(1, 1, Math.min(sh.getLastRow(), 800), Math.min(sh.getLastColumn(), 26)).getValues();
     var t = tableRows_(vals, goes);
-    if (!t && goes === 'Events' && !/past|old|archive/i.test(sh.getName())) t = gridEvents_(vals);
+    if (!t && goes === 'Events' && !/past|old|archive/i.test(sh.getName())) t = gridEvents_(vals) || dateRowEvents_(vals);
     if (t) { found = true; rows = rows.concat(t); }
   });
   if (!found) throw new Error('No tab has the headings the Hub looks for (' + (goes === 'Teaching' ? 'Date and Lesson' : goes === 'People' ? 'Name and Phone' : 'Date and Event, or Month with day columns like Sunday and Wednesday') + ').');
