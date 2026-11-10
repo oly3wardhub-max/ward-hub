@@ -125,7 +125,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.13.0';
+var VERSION = '2.13.1';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -682,7 +682,7 @@ function setUp() {
   var have = {}; rows_('Settings').forEach(function (r) { have[r.Key] = 1; });
   SCHEMA.settings.forEach(function (s) { if (!have[s[0]]) save_(null, 'Settings', { Key: s[0], Section: s[1], Setting: s[2], Value: s[3], Help: s[4] }, { system: true, quiet: true }); });
   try { repairs_(); } catch (e) { log_('Hub', 'repair', '', '', String(e)); }
-  try { lessonPlan_(); } catch (e) { log_('Hub', 'lesson plan', '', '', String(e)); }
+  try { CUR_NOFETCH_ = true; lessonPlan_(); } catch (e) { log_('Hub', 'lesson plan', '', '', String(e)); } finally { CUR_NOFETCH_ = false; }
   try { installJobs_(); } catch (e) { log_('Hub', 'jobs', '', '', String(e)); }
   var blank = ss_().getSheetByName('Sheet1'); if (blank && blank.getLastRow() === 0 && ss_().getSheets().length > 1) ss_().deleteSheet(blank);
   var me = Session.getEffectiveUser().getEmail(), a = null;
@@ -4206,18 +4206,18 @@ function repairs_() {
    Put those on the Flag crews tab, once, for holidays that don't have crews yet. "Last, First & Spouse" becomes "First & Spouse Last". */
 function flagCrewsFromNotes_() {
   var have = {}; rows_('Flag crews').forEach(function (c) { have[c.Holiday] = 1; });
-  var n = 0;
+  var add = [];
   rows_('Events').forEach(function (e) {
     if (!/^Flags?:/i.test(String(e.Title || '')) || have[e.ID]) return;
     var m = String(e.Notes || '').match(/Zone crews:\s*(.+)$/i); if (!m) return;
     m[1].split(/;\s*(?=\d+\s*=)/).forEach(function (part) {
       var z = part.match(/^\s*(\d+)\s*=\s*(.+?)\s*$/); if (!z) return;
       var who = z[2], c = who.match(/^([^,]+),\s*(.+)$/); if (c) who = c[2].trim() + ' ' + c[1].trim();
-      save_(null, 'Flag crews', { Holiday: e.ID, Date: e.Date, Zone: z[1], Person: who, Kind: 'Family', Status: 'Assigned', Notes: 'From v1' }, { system: true, quiet: true });
-      n++;
+      add.push({ Holiday: e.ID, Date: e.Date, Zone: z[1], Person: who, Kind: 'Family', Status: 'Assigned', Notes: 'From v1' });
     });
   });
-  return n;
+  if (add.length) appendRows_('Flag crews', add);
+  return add.length;
 }
 
 
@@ -4246,6 +4246,7 @@ var CUR_SITE_ = 'https://www.churchofjesuschrist.org/study/';
 var CUR_GC_LINK_ = CUR_SITE_ + 'general-conference?lang=eng';
 var CUR_AUTO_ = /^(For the Strength of Youth guide|FSY|Come, Follow Me|General conference message|No classes: (general|stake) conference|Behold Your Little Ones|Songs for this month)/;
 var CUR_YOUTH_ = ['Young Women', 'Young Men'];
+var CUR_NOFETCH_ = false; // setUp skips reading lesson pages so it stays quick; the nightly job reads them
 
 function curYm_(d) { return d.slice(0, 7); }
 function curSundaysOf_(ym) { var p = ym.split('-'), d = new Date(+p[0], +p[1] - 1, 1), out = []; while (d.getDay() !== 0) d.setDate(d.getDate() + 1); while (d.getMonth() === +p[1] - 1) { out.push(ymd_(d)); d.setDate(d.getDate() + 7); } return out; }
@@ -4270,6 +4271,7 @@ function curFsyLink_(ym, slug) { var p = ym.split('-'); return CUR_SITE_ + 'ftso
 /* Reads "2. Learn more about …" from the Church's lesson page once it's published, and remembers it. */
 function curTopic_(ym, n) {
   var known = CUR_TOPICS_[ym]; if (known) return known[n - 2];
+  if (CUR_NOFETCH_) return PropertiesService.getScriptProperties().getProperty('fsy:' + ym + ':' + n) || '';
   var props = PropertiesService.getScriptProperties(), key = 'fsy:' + ym + ':' + n, got = props.getProperty(key);
   if (got) return got;
   var now = ymd_(today_()); if (ym > curYm_(ymd_(addDays_(today_(), 70))) || ym < curYm_(now)) return '';
@@ -4388,35 +4390,74 @@ ACTIONS.lessonPlanNow = function (req, me) {
 
 
 /* ================= Import: add rows from an uploaded workbook (File › Import › Insert new sheets) ================= */
-/* Any sheet named "Import Groups", "Import Events" … is appended to that tab by its column names, then removed. */
+/* Any sheet named "Import Groups", "Import Events" … (or "Import Events (1)" when Sheets renamed a second copy) is added to
+   that tab by its column names, then removed. Safe to run again: a row that's already there (same values in the columns the
+   import sheet has) is skipped, so a run that stopped halfway just picks up where it left off. Each tab is written in one go,
+   so even a large import takes seconds. */
 function mergeImports() {
-  var done = [];
+  var t0 = Date.now(), done = [], left = [];
   ss_().getSheets().forEach(function (sh) {
-    var m = sh.getName().match(/^Import[ :_-]+(.+)$/i); if (!m) return;
-    var tab = m[1].trim(), d = tabDef_(tab); if (!d || sh.getLastRow() < 2) return;
-    var vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues(), head = vals[0].map(String), n = 0;
-    var have = {}; rows_(tab).forEach(function (r) { have[String(r[d.cols[0][0]])] = 1; });
-    if (tab === 'Groups') { // lists like Cleaning are replaced as a whole, so they never double up
-      var ki = head.indexOf('Kind'), kinds = {};
-      if (ki >= 0) for (var a = 1; a < vals.length; a++) if (/^(Cleaning|Flags|Other|Dinner group)$/.test(vals[a][ki])) kinds[vals[a][ki]] = 1;
-      var gsh = sheet_('Groups'); rows_('Groups').filter(function (g) { return kinds[g.Kind]; }).sort(function (x, y) { return y._r - x._r; }).forEach(function (g) { gsh.deleteRow(g._r); });
-      bump_('Groups');
-    }
-    for (var i = 1; i < vals.length; i++) {
-      var row = {}; head.forEach(function (h, j) { if (h) row[h] = vals[i][j] instanceof Date ? ymd_(vals[i][j]) : vals[i][j]; });
-      if (tab === 'Settings' && row.Key && have[String(row.Key)]) { if (/^(yes|true)$/i.test(String(row.Replace)) || (!setting_(row.Key) && row.Value !== '')) { save_(null, 'Settings', { Key: row.Key, Value: row.Value }, { system: true, quiet: true }); SET_CACHE_ = null; n++; } continue; }
-      if (d.cols[0][1] !== 'id' && row[d.cols[0][0]] && have[String(row[d.cols[0][0]])]) continue;
-      if (!Object.keys(row).some(function (k) { return row[k] !== '' && row[k] !== null; })) continue;
-      if (d.cols[0][1] === 'id') delete row[d.cols[0][0]];
-      save_(null, tab, row, { system: true, quiet: true }); n++;
-    }
+    var m = sh.getName().match(/^Import[ :_-]+(.+?)(?:\s*\(\d+\))?\s*$/i); if (!m) return;
+    var tab = m[1].trim(), d = tabDef_(tab); if (!d) return;
+    if (Date.now() - t0 > 240000) { left.push(sh.getName()); return; }
+    if (sh.getLastRow() < 2) { ss_().deleteSheet(sh); return; }
+    var n = importSheet_(sh, tab, d);
     ss_().deleteSheet(sh); done.push(tab + ': ' + n);
   });
-  log_('Hub', 'import', '', '', done.join(', '));
-  /* A toast, not an alert: an alert waits for OK, and if it's missed the run ends with "Exceeded maximum execution time" even though everything was saved. */
-  try { ss_().toast(done.length ? 'Added ' + done.join(', ') : 'No sheets named "Import …" were found.', 'Ward Hub', 15); } catch (e) {}
-  return done.join(', ');
-  return done;
+  log_('Hub', 'import', '', '', done.join(', ') + (left.length ? ' · still to do: ' + left.join(', ') : ''));
+  /* A toast, not an alert: an alert waits for OK, and if it's missed the run ends with "Exceeded maximum execution time". */
+  var msg = (done.length ? 'Added ' + done.join(', ') : 'No sheets named "Import …" were found.') + (left.length ? ' · Run Add imported sheets again for: ' + left.join(', ') : '');
+  try { ss_().toast(msg, 'Ward Hub', 20); } catch (e) {}
+  return msg;
+}
+function importSheet_(sh, tab, d) {
+  var vals = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues(), head = vals[0].map(function (h) { return String(h).trim(); }), n = 0;
+  var idCol = d.cols[0][0], idType = d.cols[0][1], types = {}; d.cols.forEach(function (c) { types[c[0]] = c[1]; });
+  var cell = function (v) { return v instanceof Date ? ymd_(v) : (v === null || v === undefined ? '' : String(v).trim()); };
+  var rows = vals.slice(1).map(function (line) { var r = {}; head.forEach(function (h, j) { if (h) r[h] = cell(line[j]); }); return r; })
+    .filter(function (r) { return Object.keys(r).some(function (k) { return r[k] !== ''; }); });
+  if (tab === 'Settings') {
+    var have = {}; rows_('Settings').forEach(function (r) { have[String(r.Key)] = 1; });
+    rows.forEach(function (r) {
+      if (!r.Key) return;
+      if (have[r.Key]) { if (/^(yes|true)$/i.test(r.Replace) || (!setting_(r.Key) && r.Value !== '')) { if (setting_(r.Key) !== r.Value) { save_(null, 'Settings', { Key: r.Key, Value: r.Value }, { system: true, quiet: true }); SET_CACHE_ = null; n++; } } }
+      else { save_(null, 'Settings', { Key: r.Key, Section: r.Section || 'Other', Setting: r.Setting || r.Key, Value: r.Value, Help: r.Help || '' }, { system: true, quiet: true }); n++; }
+    });
+    return n;
+  }
+  if (tab === 'Groups') { // lists like Cleaning are replaced as a whole, so they never double up
+    var kinds = {}; rows.forEach(function (r) { if (/^(Cleaning|Flags|Other|Dinner group)$/.test(r.Kind || '')) kinds[r.Kind] = 1; });
+    var gsh = sheet_('Groups'); rows_('Groups').filter(function (g) { return kinds[g.Kind]; }).sort(function (x, y) { return y._r - x._r; }).forEach(function (g) { gsh.deleteRow(g._r); });
+    bump_('Groups');
+  }
+  /* What's already there, compared on the columns this import sheet has (not the ID, and not yes/no or JSON columns). */
+  var keyCols = head.filter(function (h) { return h && h !== idCol && types[h] && types[h] !== 'bool' && types[h] !== 'json' && h !== 'Replace'; });
+  var norm = function (v) { return String(v === null || v === undefined ? '' : v).trim().toLowerCase(); };
+  var key = function (r) { return keyCols.map(function (h) { return norm(r[h]); }).join('\u0001'); };
+  var have2 = {}, ids = {}; rows_(tab).forEach(function (r) { have2[key(r)] = 1; ids[String(r[idCol])] = 1; });
+  var add = [];
+  rows.forEach(function (r) {
+    if (idType !== 'id' && r[idCol] && ids[r[idCol]]) return;
+    var k = key(r); if (have2[k]) return; have2[k] = 1;
+    if (idType === 'id') delete r[idCol];
+    add.push(r);
+  });
+  if (add.length) appendRows_(tab, add);
+  return add.length;
+}
+/* Adds many rows to a tab with one write (each gets an ID). Rows are objects keyed by column name. */
+function appendRows_(tab, list) {
+  var d = tabDef_(tab), sh = sheet_(tab), lastCol = Math.max(sh.getLastColumn(), d.cols.length);
+  var head = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String), idCol = d.cols[0][0];
+  var lines = list.map(function (r) {
+    if (d.cols[0][1] === 'id' && !r[idCol]) r[idCol] = newId_(tab);
+    var line = head.map(function () { return ''; });
+    d.cols.forEach(function (c) { var i = head.indexOf(c[0]); if (i >= 0 && (c[0] in r)) line[i] = toIn_(r[c[0]], c[1]); });
+    return line;
+  });
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try { sh.getRange(sh.getLastRow() + 1, 1, lines.length, lastCol).setValues(lines); bump_(tab); } finally { lock.releaseLock(); }
+  return lines.length;
 }
 
 // ===== END OF WARD HUB ENGINE (if you can see this line, you copied everything) =====
