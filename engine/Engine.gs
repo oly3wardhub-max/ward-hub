@@ -125,7 +125,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.13.2';
+var VERSION = '2.13.3';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -4401,8 +4401,10 @@ function mergeImports() {
     var tab = m[1].trim(), d = tabDef_(tab); if (!d) return;
     if (Date.now() - t0 > 240000) { left.push(sh.getName()); return; }
     if (sh.getLastRow() < 2) { ss_().deleteSheet(sh); return; }
+    var t1 = Date.now(); console.log('Starting ' + sh.getName() + ' (' + (sh.getLastRow() - 1) + ' rows)');
     var n = importSheet_(sh, tab, d);
     ss_().deleteSheet(sh); done.push(tab + ': ' + n);
+    console.log('Done ' + sh.getName() + ': ' + n + ' added in ' + Math.round((Date.now() - t1) / 1000) + 's');
   });
   log_('Hub', 'import', '', '', done.join(', ') + (left.length ? ' · still to do: ' + left.join(', ') : ''));
   /* A toast, not an alert: an alert waits for OK, and if it's missed the run ends with "Exceeded maximum execution time". */
@@ -4432,6 +4434,7 @@ function importSheet_(sh, tab, d) {
       if (gl >= 2) {
         var gh = gsh.getRange(1, 1, 1, gc).getValues()[0].map(String), kc = gh.indexOf('Kind'), gv = gsh.getRange(2, 1, gl - 1, gc).getValues();
         var keep = gv.filter(function (r) { return !kinds[String(r[kc])]; });
+        console.log('Groups: ' + (gv.length - keep.length) + ' old rows of ' + Object.keys(kinds).join(', ') + ' replaced');
         if (keep.length < gv.length) {
           var lock = LockService.getScriptLock(); lock.waitLock(30000);
           try { gsh.getRange(2, 1, gl - 1, gc).clearContent(); if (keep.length) gsh.getRange(2, 1, keep.length, gc).setValues(keep); } finally { lock.releaseLock(); }
@@ -4452,6 +4455,7 @@ function importSheet_(sh, tab, d) {
     if (idType === 'id') delete r[idCol];
     add.push(r);
   });
+  console.log(tab + ': ' + rows.length + ' rows in the import, ' + add.length + ' new');
   if (add.length) appendRows_(tab, add);
   return add.length;
 }
