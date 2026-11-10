@@ -21,8 +21,17 @@ window.WHProgram = (function () {
     h += hymn('Closing Hymn', p.closing) + line('Benediction', p.benediction);
     return h;
   }
-  function side(p, qr) {
+  function welcome(p) {
     let h = '';
+    if (p.welcome) h += `<p class="pg-welcome">${esc(p.welcome)}</p>`;
+    if (p.after && (p.after.lines.length || p.after.note)) {
+      h += `<div class="pg-kicker">After sacrament meeting</div>${p.after.lines.map(l => `<div class="pg-after"><b>${esc(l[0])}</b><span>${esc(l[1])}</span></div>`).join('')}`;
+      if (p.after.note) h += `<p class="pg-dim">${esc(p.after.note)}</p>`;
+    }
+    return h;
+  }
+  function side(p, qr) {
+    let h = qr ? welcome(p) : '';
     if (p.announcements && p.announcements.length) {
       h += '<div class="pg-title">Calendar for the<br><small>upcoming week</small></div>';
       let org = '';
@@ -66,6 +75,11 @@ window.WHProgram = (function () {
   .pg-dim{color:#777}.pg-qr{text-align:center;margin-top:16px;font-size:11px;color:#555}.pg-qr svg,.pg-qr img{width:96px;height:96px}
   .pg-foot{font-size:12px!important;color:#555}
   .pg-mail{font-size:13px}
+  .pg-welcome{font-size:15px!important;margin:12px 0 4px!important}
+  .pg-welcomebox{margin:6px 0 14px}
+  .pg-after{display:flex;gap:12px;margin:6px 0;font-size:14px;text-align:left}.pg-after b{white-space:nowrap;color:#1F3A93;min-width:92px}
+  @media (prefers-color-scheme:dark){.pg-online .pg-after b{color:#8FA8FF}}
+  .pg-print .pg-after{font-size:12px;margin:3px 0}.pg-print .pg-welcome{font-size:12px!important}
   @media (prefers-color-scheme:dark){.pg-online{color:#f2f2f7}.pg-online .pg-ward,.pg-online .pg-meeting,.pg-online .pg-head,.pg-online .pg-org,.pg-online .pg-title{color:#8FA8FF}.pg-online .pg-sub,.pg-online .pg-date,.pg-online .pg-dim,.pg-online cite{color:#bbb}}
   .pg-print{width:7.6in;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:0 .45in;font-size:13px}
   .pg-print>div+div{border-left:1px dashed #ccc;padding-left:.35in}
@@ -74,7 +88,7 @@ window.WHProgram = (function () {
   #print-root{display:none}@media print{@page{size:letter;margin:.45in}body.printing-program>*:not(#print-root){display:none!important}body.printing-program #print-root{display:block;color:#000}body.printing-program{background:#fff!important}}
   `;
   function online(p) {
-    return `<div class="pg pg-online">${header(p)}${order(p)}<div class="pg-rule" style="margin-top:20px"></div>${side(p, '')}
+    return `<div class="pg pg-online">${header(p)}${welcome(p) ? `<div class="pg-welcomebox">${welcome(p)}</div>` : ''}${order(p)}<div class="pg-rule" style="margin-top:20px"></div>${side(p, '')}
       ${p.zoom ? `<p style="margin-top:18px"><a href="${esc(p.zoom)}">Join on Zoom</a></p>` : ''}${(p.links || []).map(l => `<p style="margin-top:18px"><a href="${esc(l.url)}">${esc(l.label)}</a></p>`).join('')}${p.building ? `<p style="margin-top:18px"><a href="${esc(p.building)}">Request the building</a></p>` : ''}</div>`;
   }
   function print(p, qrSvg) { return `<div class="pg pg-print"><div>${header(p)}${order(p)}</div><div>${side(p, qrSvg)}</div></div>`; }

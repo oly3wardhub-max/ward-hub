@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.14.0';
+  const VERSION = '2.15.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -190,8 +190,9 @@
         h += `<div class="section-h big"><span>This week</span><span class="chip ${left ? 'blue' : 'green'}">${left ? left + ' to do' : 'All done'}</span></div><div class="list">` +
           d.checklist.map(c => `<div class="row ${c.done ? 'done' : ''}"><button data-act="check" data-id="${c.id}" data-on="${c.done ? 1 : 0}" aria-label="Done" style="background:none;border:0;padding:4px 6px 4px 0;margin:0"><span class="check ${c.done ? 'on' : ''}"></span></button><button class="main" ${c.go ? `data-go="${esc(c.go)}"` : ''} style="background:none;border:0;padding:0;text-align:left;color:inherit;font:inherit"><div class="t">${esc(c.text)}</div>${c.done ? `<div class="s">${esc(c.done)}</div>` : ''}</button>${c.go ? I.chev : ''}</div>`).join('') + '</div>';
       }
-      h += `<div class="section-h big"><span>Needs you</span>${d.needs.length ? `<span class="chip">${d.needs.length}</span>` : ''}</div>`;
-      h += d.needs.length ? '<div class="list">' + d.needs.map(n => {
+      const shut = !!store.get('needsShut'), urgent = d.needs.filter(n => n.kind === 'emergency'), shown = shut ? urgent : d.needs;
+      h += `<button class="section-h big" data-act="needsToggle" style="width:100%;background:none;border:0;color:inherit;cursor:pointer;text-align:left" aria-expanded="${!shut}"><span>Needs you</span><span style="display:flex;align-items:center;gap:8px">${d.needs.length ? `<span class="chip">${d.needs.length}</span>` : ''}<span style="color:var(--accent);font-size:15px;font-weight:500">${shut ? 'Show' : 'Hide'}</span></span></button>`;
+      h += shut && !urgent.length ? '' : shown.length ? '<div class="list">' + shown.map(n => {
         const late = n.due && n.due < ymd(today());
         const go = n.kind === 'emergency' ? 'data-go="#/x/emergency" style="background:var(--red-tint)"' : n.kind === 'sunday' ? `data-go="#/sunday/${n.id}"` : n.kind === 'task' ? `data-act="task" data-id="${esc(n.id)}"` : n.kind === 'announcements' ? `data-go="#/x/announcements"` : n.kind === 'lcr' ? `data-go="#/x/changes"` : n.kind === 'callings' ? `data-go="#/x/changes"` : n.kind === 'inbox' ? `data-go="#/x/inbox"` : n.kind === 'training' ? `data-go="#/x/training"` : n.kind === 'teach' && n.link ? `data-act="openUrl" data-url="${esc(n.link)}"` : '';
         return `<button class="row wrap" ${go}><div class="main"><div class="t">${esc(n.title)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>${n.due ? `<span class="chip ${late ? 'red' : rel(n.due) === 'Today' ? 'orange' : ''}">${esc(rel(n.due))}</span>` : ''}${go ? I.chev : ''}</button>`;
@@ -421,6 +422,7 @@
       const link = location.origin + location.pathname + '#k=' + encodeURIComponent(S.key) + (store.get('api') ? '&api=' + encodeURIComponent(store.get('api')) : '');
       try { await navigator.clipboard.writeText(link); toast('Copied. After you add it, open the new icon and paste it once.', true); } catch (e) { toast('Couldn\'t copy here. Use the link from your text or email instead.'); }
     },
+    needsToggle() { store.set('needsShut', !store.get('needsShut')); route(); },
     install: () => openSheet(`<header><span style="min-width:64px"></span><h2>Add to Home Screen</h2><button class="link r" data-act="close">Done</button></header>
       <div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">1. Copy your sign-in link</div><div class="s">On iPhone the Home Screen app keeps its own sign-in, so it will ask once.</div></div><button class="btn small" data-act="copylink">Copy</button></div></div>
       <div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">iPhone (Safari or Chrome)</div><div class="s">Tap the Share button (square with an arrow; in Chrome it's at the top right), tap <b>Add to Home Screen</b>, then <b>Add</b>. Open the new Ward Hub icon, tap the box, <b>Paste</b>, then <b>Sign in</b>. It remembers you from then on.</div></div></div>

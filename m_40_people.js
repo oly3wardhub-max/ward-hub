@@ -55,12 +55,21 @@
   function drawOrg() {
     const { esc, I, fmt } = WH, d = O;
     let h = '';
+    if (d.lead && d.moveUps && (d.moveUps.items.length || d.moveUps.notes.length)) {
+      const mu = d.moveUps;
+      h += `<div class="section-h big"><span>January ${mu.year} move-ups</span><span class="chip blue">${mu.items.length}</span></div>
+        <p class="foot" style="margin:0 4px 8px">Classes go by the age children turn during the year. Untick anyone who should stay, then move the rest. Before January they stay in their class through December.</p>`;
+      if (mu.items.length) h += `<div class="list"><label class="row"><div class="main"><div class="t">All</div></div><input type="checkbox" id="muAll" checked></label>${mu.items.map(it => `<label class="row"><div class="main"><div class="t">${esc(it.person)}</div><div class="s">${esc(it.from)} → ${esc(it.toOrg !== d.org ? it.toOrg + ' · ' : '')}${esc(it.to)} · turns ${it.turns}</div></div><input type="checkbox" class="mu" data-id="${esc(it.id)}" data-p="${esc(it.person)}" checked></label>`).join('')}</div>
+        <div class="btns"><button class="btn" data-act="muApply">Move up the ones ticked</button></div>`;
+      if (mu.notes.length) h += `<div class="list">${mu.notes.map(n => `<div class="row wrap"><div class="main"><div class="s">${esc(n)}</div></div></div>`).join('')}</div>`;
+    }
     if (d.classes.length) {
       h += `<div class="section-h big"><span>Classes</span>${d.lead ? `<button class="link" style="font-size:15px" data-act="clsAdd">Add a person</button>` : ''}</div>`;
       d.classes.forEach(c => {
         h += `<div class="section-h"><span>${esc(c.name)}</span><span>${c.members.length}</span></div><div class="list">`;
+        h += (c.leaders || []).map(l => `<button class="row" data-act="person" data-name="${esc(l.person)}"><div class="main"><div class="t">${esc(l.person)}</div></div><span class="chip green">${esc(/adviser|advisor/i.test(l.calling) ? 'Adviser' : /specialist/i.test(l.calling) ? 'Specialist' : l.calling)}</span>${I.chev}</button>`).join('');
         h += c.teachers.map(t => `<button class="row" ${d.lead ? `data-act="clsPerson" data-id="${esc(t.id)}" data-g="${esc(c.name)}"` : ''}><div class="main"><div class="t">${esc(t.person)}</div></div><span class="chip blue">Teacher</span>${d.lead ? I.chev : ''}</button>`).join('');
-        if (!c.teachers.length && d.lead) h += `<button class="row" data-act="clsTeacher" data-g="${esc(c.name)}"><div class="main"><div class="t" style="color:var(--orange)">No teacher yet · add one</div></div>${I.chev}</button>`;
+        if (!c.teachers.length && !(c.leaders || []).length && d.lead) h += `<button class="row" data-act="clsTeacher" data-g="${esc(c.name)}"><div class="main"><div class="t" style="color:var(--orange)">No teacher yet · add one</div></div>${I.chev}</button>`;
         h += c.members.map(m => `<button class="row" ${d.lead ? `data-act="clsPerson" data-id="${esc(m.id)}" data-g="${esc(c.name)}"` : `data-act="person" data-name="${esc(m.person)}"`}><div class="main"><div class="t">${esc(m.person)}</div>${m.notes ? `<div class="s">${esc(m.notes)}</div>` : ''}</div>${I.chev}</button>`).join('');
         h += '</div>';
         if (c.later.length) h += `<details class="foot" style="margin:8px 4px 0"><summary>Later: ${c.later.length} (${esc(c.later[0].period)})</summary>${c.later.map(m => esc(m.person)).join(', ')}</details>`;
@@ -86,6 +95,14 @@
   }
   Object.assign(WH.act, {
     clsAdd() { clsForm('Add to a class', { group: classNames()[0], role: 'Member' }); },
+    async muApply(el) {
+      const items = [...document.querySelectorAll('input.mu:checked')].map(x => ({ id: x.dataset.id, person: x.dataset.p }));
+      if (!items.length) { WH.toast('Tick at least one.'); return; }
+      if (!confirm('Move up ' + items.length + (items.length === 1 ? ' person' : ' people') + '?')) return;
+      el.innerHTML = '<span class="spin"></span>';
+      try { const r = await WH.call('moveUpsApply', { org: O.org, items }); WH.toast(r.moved + ' moved up', true); } catch (e) { WH.toast(e.message); }
+      WH.routes.org.view([encodeURIComponent(O.org)]);
+    },
     clsNew(el) { clsForm('Add to a class', { person: el.dataset.p, group: classNames()[0], role: 'Member', period: el.dataset.jan ? O.nextYear + '-01 to 2099-12' : '' }); },
     clsTeacher(el) { clsForm('Add a teacher', { group: el.dataset.g, role: 'Teacher' }); },
     clsPerson(el) {
@@ -161,3 +178,5 @@
     }
   });
 })();
+/* Move-ups: the "All" box ticks or unticks every row. */
+document.addEventListener('change', e => { if (e.target && e.target.id === 'muAll') document.querySelectorAll('input.mu').forEach(x => { x.checked = e.target.checked; }); });
