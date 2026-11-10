@@ -2842,7 +2842,7 @@ function gridEvents_(vals) {
 /* ---------- a schedule laid out by rows of dates ----------
    Like the youth activity calendar: each month has a heading row (Lesson Topic, Deacons, Teachers, Priests … Activity, Deacons,
    Teachers, Priests, Activity Ideas) and rows that hold a Sunday date with its lesson and a Wednesday date with its activity.
-   Weeknight activities become calendar items ("Individual Quorums: Priests: Lunch - Kyle Oswald", "Combined YM/YW: First Aid");
+   Weeknight activities become calendar items ("Individual Quorums: Priests: Service night", "Combined YM/YW: First Aid");
    Sunday lessons are left to the lesson plan, and "no activities", breaks and idea columns are skipped. Only dates from last
    week on are read, so old tabs in the same file do nothing. */
 var DR_HEAD_ = /^(deacons?|teachers?|priests?|activity|activities|lesson topic|lesson|beehives|mia ?maids|laurels|builders( of faith)?|messengers( of hope)?|gatherers( of light)?|yw|ym|combined)$/i;
