@@ -45,6 +45,9 @@
       cached('audiences', 'audiences', {}, d => {
         if (!d) return; if (d.error) { document.getElementById('body').innerHTML = errorBox(d.error); return; }
         M.aud = d; if (!M.org || !groupsOf(M.org).length) { M.org = (d.groups[0] || {}).org || ''; M.gid = ''; }
+        const draft = WH.store.get('msgDraft'), pic = WH.store.get('msgPic');
+        if (draft) { M.msg = draft; WH.store.del('msgDraft'); }
+        if (pic) { M.msg = String(M.msg || '').replace(/\s*Picture: \S+$/, '') + '\nPicture: ' + pic; WH.store.del('msgPic'); WH.toast('Picture link added', true); }
         if (!M.gid || !cur()) M.gid = (groupsOf(M.org)[0] || {}).id || '';
         draw();
         if (!M.lessons) WH.call('lessons', {}).then(r => { M.lessons = r; if (M.msg === null) draw(); }).catch(() => { });
@@ -64,6 +67,7 @@
     const tpl = templates(g);
     if (tpl.length) h += `<div class="dates" style="margin-bottom:6px">${tpl.map((t, i) => `<button class="date" style="min-width:auto" data-act="msgTpl" data-i="${i}"><div class="d" style="font-size:14px;padding:4px 2px;white-space:nowrap">${esc(t[0])}</div></button>`).join('')}</div>`;
     h += `<div class="list"><div class="field col"><textarea id="msgtext" style="min-height:120px;font-size:17px" placeholder="What would you like to tell them?">${esc(M.msg)}</textarea></div></div>`;
+    h += `<div class="foot" style="display:flex;gap:16px"><button class="link" style="font-size:15px" data-act="msgPicture">${/Picture: \S+/.test(M.msg || '') ? 'Change the picture' : 'Add a picture'}</button></div>`;
     h += `<div class="section-h"><span>How to send</span></div><div class="seg">${[['group', 'Group texts'], ['one', 'One at a time']].map(o => `<button class="${M.mode === o[0] ? 'on' : ''}" data-act="msgMode" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>`;
     h += `<p class="foot">${M.mode === 'group' ? 'Each button opens one group text of up to 20 on your phone. Everyone in it sees the numbers and replies.' : 'Each button opens a private text to one person. Replies come only to you.'}</p>`;
     if (M.mode === 'group') {
@@ -94,8 +98,15 @@
     const cls = String(g.id).startsWith('c:') ? g.id.slice(2) : '';
     return L.find(l => l.org === g.org && l.text && (!cls || l.cls === cls)) || L.find(l => l.org === g.org && l.text) || null;
   }
+  const actWhen = a => WH.fmt(a.date, { weekday: 'long', month: 'short', day: 'numeric' }) + (a.start ? ' at ' + a.start : '');
+  function activityFor(g) {
+    const A = (M.aud && M.aud.activities) || []; if (!g) return null;
+    const youth = g.org === 'Young Women' || g.org === 'Young Men';
+    return A.find(a => a.org === g.org) || (youth ? A.find(a => a.org === 'Youth') : null) || null;
+  }
   function templates(g) {
-    const t = [], me = M.aud.me, l = lessonFor(g);
+    const t = [], me = M.aud.me, l = lessonFor(g), act = activityFor(g);
+    if (act) t.push([(g && (g.org === 'Young Women' || g.org === 'Young Men') ? 'This week\'s activity' : 'Next activity'), (/Youth|Young/.test(act.org) ? 'Youth activity ' : '') + actWhen(act) + ': ' + act.title + (act.place ? ', ' + act.place : '') + '. See you there!']);
     if (l) t.push(['This Sunday\'s lesson', l.text]);
     if (g && g.zone && M.duties) M.duties.filter(d => d.now === g.label).forEach(d => t.push([d.name, d.msg || `Your zone (${g.label}) has ${d.name.toLowerCase()} this week. Thank you!`]));
     t.push(['Reminder', `Reminder from ${me}: `]);
@@ -104,6 +115,13 @@
   }
   function suggest(g) { const l = lessonFor(g); return l ? l.text : ''; }
 
+  Object.assign(WH.act, {
+    msgPicture() {
+      const g = cur(), act = activityFor(g), youth = g && /Young|Youth/.test(g.org);
+      const q = new URLSearchParams({ msg: '1', kicker: youth ? 'Youth activity' : (g ? g.org : ''), title: act ? act.title : '', date: act ? WH.fmt(act.date, { weekday: 'long', month: 'short', day: 'numeric' }) : '', time: act ? act.start : '', place: act ? act.place : '' });
+      location.hash = '#/x/graphic/' + encodeURIComponent(q.toString());
+    }
+  });
   Object.assign(WH.act, {
     msgOrg(el) { M.org = el.dataset.org; M.gid = (groupsOf(M.org)[0] || {}).id || ''; draw(); },
     msgGroup(el) { M.gid = el.dataset.id; M.sent = {}; draw(); },
