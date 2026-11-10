@@ -125,7 +125,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.13.4';
+var VERSION = '2.13.5';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -4412,10 +4412,10 @@ function mergeImports() {
     var tab = m[1].trim(), d = tabDef_(tab); if (!d) return;
     if (Date.now() - t0 > 240000) { left.push(sh.getName()); return; }
     if (sh.getLastRow() < 2) { ss_().deleteSheet(sh); return; }
-    var t1 = Date.now(); console.log('Starting ' + sh.getName() + ' (' + (sh.getLastRow() - 1) + ' rows)');
+    var t1 = Date.now(), name = sh.getName(); console.log('Starting ' + name + ' (' + (sh.getLastRow() - 1) + ' rows)');
     var n = importSheet_(sh, tab, d);
     ss_().deleteSheet(sh); done.push(tab + ': ' + n);
-    console.log('Done ' + sh.getName() + ': ' + n + ' added in ' + Math.round((Date.now() - t1) / 1000) + 's');
+    console.log('Done ' + name + ': ' + n + ' added in ' + Math.round((Date.now() - t1) / 1000) + 's');
   });
   log_('Hub', 'import', '', '', done.join(', ') + (left.length ? ' · still to do: ' + left.join(', ') : ''));
   /* A toast, not an alert: an alert waits for OK, and if it's missed the run ends with "Exceeded maximum execution time". */
