@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.13.5';
+  const VERSION = '2.14.0';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -166,7 +166,9 @@
     $('#app').innerHTML = `<div class="welcome">
       <img class="logo" src="icons/icon-192.png" alt="">
       <h1>Ward Hub</h1>
-      <p>Open the personal link from your executive secretary on this phone, and you're in.</p>
+      <p>${navigator.standalone || matchMedia('(display-mode: standalone)').matches ? 'Apps on the Home Screen keep their own sign-in. Copy your personal link (from your text or email) and paste it here once.' : 'Open the personal link from your executive secretary on this phone, and you\'re in.'}</p>
+      <div class="list"><div class="field"><input id="pl" type="url" autocomplete="off" autocapitalize="off" placeholder="Paste your personal link" aria-label="Personal link"></div></div>
+      <button class="btn" data-act="pastelink">Sign in</button><p class="foot" style="text-align:center;margin:10px 0 22px" id="plmsg"></p>
       ${S.api ? `<div class="list"><div class="field"><input id="em" type="email" inputmode="email" autocomplete="email" placeholder="Your email address" aria-label="Email"></div></div>
       <button class="btn" data-act="sendlink">Email me my link</button><p class="foot" style="text-align:center;margin:10px 0 22px">It only goes to addresses the ward has on file.</p>` : ''}
       <button class="btn gray" data-act="demo">Try the demo</button>
@@ -409,8 +411,19 @@
     signout: () => { if (S.demo) { store.del('demo'); signOut(); return; } if (confirm('Sign out on this phone? You will need your link again.')) signOut('Signed out'); },
     refresh: () => { Object.keys(localStorage).filter(k => k.startsWith('wh:c:')).forEach(k => localStorage.removeItem(k)); store.del('boot'); S.boot = null; route(); toast('Refreshed', true); },
     print: () => window.print(),
+    pastelink() {
+      const v = ($('#pl') || {}).value || '', h = v.indexOf('#') >= 0 ? v.slice(v.indexOf('#') + 1) : '', p = new URLSearchParams(h);
+      if (!p.get('k')) { const m = $('#plmsg'); if (m) m.textContent = 'That doesn\'t look like a Ward Hub link. Copy the whole link from your text or email, then paste it here.'; return; }
+      store.set('key', p.get('k')); if (p.get('api')) store.set('api', p.get('api')); store.del('demo'); store.del('boot');
+      location.hash = '#/today'; location.reload();
+    },
+    async copylink() {
+      const link = location.origin + location.pathname + '#k=' + encodeURIComponent(S.key) + (store.get('api') ? '&api=' + encodeURIComponent(store.get('api')) : '');
+      try { await navigator.clipboard.writeText(link); toast('Copied. After you add it, open the new icon and paste it once.', true); } catch (e) { toast('Couldn\'t copy here. Use the link from your text or email instead.'); }
+    },
     install: () => openSheet(`<header><span style="min-width:64px"></span><h2>Add to Home Screen</h2><button class="link r" data-act="close">Done</button></header>
-      <div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">iPhone (Safari)</div><div class="s">Tap the Share button (square with an arrow), scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.</div></div></div>
+      <div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">1. Copy your sign-in link</div><div class="s">On iPhone the Home Screen app keeps its own sign-in, so it will ask once.</div></div><button class="btn small" data-act="copylink">Copy</button></div></div>
+      <div class="list"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">iPhone (Safari or Chrome)</div><div class="s">Tap the Share button (square with an arrow; in Chrome it's at the top right), tap <b>Add to Home Screen</b>, then <b>Add</b>. Open the new Ward Hub icon, tap the box, <b>Paste</b>, then <b>Sign in</b>. It remembers you from then on.</div></div></div>
       <div class="row wrap"><div class="main"><div class="t" style="font-weight:600">Android (Chrome)</div><div class="s">Tap the ⋮ menu at the top right, then <b>Install app</b> (or <b>Add to Home screen</b>).</div></div></div></div>`),
     sendlink: async () => {
       const em = ($('#em').value || '').trim(); if (!/.+@.+\..+/.test(em)) { toast('Type your email address'); return; }

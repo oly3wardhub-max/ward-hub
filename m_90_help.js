@@ -15,7 +15,7 @@
   WH.more.push({ title: 'How to use Ward Hub', sub: 'A short guide for your calling', href: '#/x/help', icon: ic('<circle cx="10" cy="10" r="7.5"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14.5v.01"/>'), color: '#8E8E93', order: 90, group: 'Help' });
 
   const G = {
-    install: ['Put it on your Home Screen', 'iPhone: open your link in Safari, tap Share, then Add to Home Screen. Android: open it in Chrome, tap ⋮, then Install app. It opens like any other app from then on.'],
+    install: ['Put it on your Home Screen', 'In the Hub, More › Add to Home Screen › Copy your sign-in link. iPhone: tap Share, then Add to Home Screen; open the new icon, paste the link once and tap Sign in (Home Screen apps keep their own sign-in). Android: in Chrome tap ⋮, then Install app. It opens like any other app from then on.'],
     today: ['Today', 'Start here. "Needs you" lists what\'s yours, soonest first: tasks, Sundays that need speakers, lessons you teach, things to approve. Tap any item to act on it.'],
     msgs: ['Text a group', 'More › Messages. Pick who (your whole organization, a class, a zone, a saved group), type or pick a message, and tap a button. Your phone opens Messages with the names filled in. Texts come from your own phone, so replies come to you.'],
     youth: ['Texting youth', 'Choose "Youth + parents" so a parent is always included, as youth protection asks.'],

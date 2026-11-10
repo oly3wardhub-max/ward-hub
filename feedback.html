@@ -1,14 +1,35 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Feedback for the Bishop</title><meta name="robots" content="noindex,nofollow">
-<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.13.5">
+<link rel="icon" href="icons/icon-192.png"><link rel="stylesheet" href="app.css?v=2.14.0">
 </head><body><main class="screen" id="m" style="padding-bottom:40px"></main>
-<script src="config.js?v=2.13.5"></script>
+<script src="config.js?v=2.14.0"></script>
 <script>
 (function(){
   const m=document.getElementById('m'), api=(window.WARD_HUB_CONFIG||{}).api;
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const post=o=>fetch(api,{method:'POST',body:JSON.stringify(o)}).then(r=>r.json());
+  if(new URLSearchParams(location.search).get('meet')){ meet(); return; }
+  function meet(){
+    document.title='Meet with the Bishop';
+    m.innerHTML='<div class="largetitle"><h1>Meet with the bishop</h1></div><p class="subtitle">The executive secretary will text or call you to set up a time.</p>'+
+      '<div class="list"><div class="field"><label>Your name</label><input id="n" autocomplete="name" style="color:var(--text)"></div><div class="field"><label>Phone</label><input id="p" type="tel" autocomplete="tel" style="color:var(--text)"></div></div>'+
+      '<div class="section-h"><span>With</span></div><div class="list"><label class="row"><div class="main"><div class="t">The bishop</div></div><input type="radio" name="who" value="bishop" checked></label><label class="row"><div class="main"><div class="t">Any member of the bishopric</div></div><input type="radio" name="who" value="bishopric"></label></div>'+
+      '<div class="section-h"><span>When</span></div><div class="list"><div class="field"><label>Best times</label><input id="b" placeholder="e.g. Sunday after church, Tuesday evening" style="color:var(--text)"></div>'+
+      '<div class="field col"><label>Anything the bishop should know (optional)</label><textarea id="x" rows="4" style="color:var(--text)" placeholder="Only the bishop reads this."></textarea></div></div>'+
+      '<input id="w" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-5000px" aria-hidden="true">'+
+      '<div class="btns"><button class="btn" id="go">Send</button></div><p id="e" class="foot" style="text-align:center"></p>'+
+      '<p class="foot">Your name, phone and best times go to the executive secretary to schedule. What you write about why goes only to the bishop.</p>';
+    document.getElementById('go').onclick=async()=>{
+      const v=id=>document.getElementById(id).value, b=document.getElementById('go'), e=document.getElementById('e');
+      if(!v('n').trim()||v('p').replace(/\D/g,'').length<7){ e.textContent='Please add your name and a phone number.'; return; }
+      b.disabled=true; b.innerHTML='<span class="spin"></span>';
+      const who=(document.querySelector('input[name=who]:checked')||{}).value;
+      const r=await post({action:'meetAsk',name:v('n'),phone:v('p'),times:v('b'),note:v('x'),who,website:v('w')}).catch(()=>({ok:false,error:'Couldn\'t send. Please try again.'}));
+      if(r.ok) m.innerHTML='<div class="welcome" style="min-height:70vh"><h1>Thank you</h1><p>The executive secretary will reach out soon to set up a time with '+esc(r.who||'the bishop')+'.</p></div>';
+      else { b.disabled=false; b.textContent='Send'; e.textContent=r.error||'Couldn\'t send.'; }
+    };
+  }
   m.innerHTML='<div class="largetitle"><h1>Feedback</h1></div><p class="subtitle">Ideas, concerns or thanks for the bishop. Only he reads these.</p>'+
     '<div class="list"><div class="field col"><label>Your feedback</label><textarea id="t" rows="7" style="color:var(--text)" placeholder="What would you like the bishop to know?"></textarea></div></div>'+
     '<div class="section-h"><span>Your name (optional)</span></div><div class="list"><div class="field"><label>Name</label><input id="n" autocomplete="name" placeholder="Leave blank to stay anonymous" style="color:var(--text)"></div><div class="field"><label>Phone or email</label><input id="c" placeholder="If you\'d like a reply" style="color:var(--text)"></div></div>'+
