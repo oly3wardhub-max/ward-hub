@@ -131,7 +131,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.16.1';
+var VERSION = '2.16.2';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -4742,7 +4742,7 @@ function mergeImports() {
   ss_().getSheets().forEach(function (sh) {
     var m = sh.getName().match(/^Import[ :_-]+(.+?)(?:\s*\(\d+\))?\s*$/i); if (!m) return;
     var tab = m[1].trim(), d = tabDef_(tab);
-    if (/^updates$/i.test(tab)) { var nu = importUpdates_(sh); ss_().deleteSheet(sh); done.push('Updates: ' + nu); return; }
+    if (/^updates( v2)?$/i.test(tab)) { var nu = importUpdates_(sh); ss_().deleteSheet(sh); done.push('Updates: ' + nu); return; }
     if (!d) return;
     if (Date.now() - t0 > 240000) { left.push(sh.getName()); return; }
     if (sh.getLastRow() < 2) { ss_().deleteSheet(sh); return; }
@@ -4830,8 +4830,11 @@ function importUpdates_(sh) {
   vals.slice(1).forEach(function (r) {
     var tab = String(r[ti] || '').trim(), d = tabDef_(tab); if (!d) return;
     var where = pairs(r[wi]), set = pairs(r[si]); if (!Object.keys(where).length || !Object.keys(set).length) return;
-    rows_(tab).forEach(function (row) {
-      if (!Object.keys(where).every(function (k) { return nkey_(row[k]) === nkey_(where[k]); })) return;
+    /* compare letters AND digits (dates, numbers), and never touch more than 60 rows from one line, so a loose Where can't sweep a tab */
+    var ukey = function (v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    var hits = rows_(tab).filter(function (row) { return Object.keys(where).every(function (k) { return (k in row) && ukey(row[k]) === ukey(where[k]) && ukey(where[k]) !== ''; }); });
+    if (hits.length > 60) { log_('Hub', 'import updates', tab, '', 'skipped (matches ' + hits.length + ' rows): ' + r[wi]); return; }
+    hits.forEach(function (row) {
       var patch = {}, ch = false; patch[d.cols[0][0]] = row[d.cols[0][0]];
       Object.keys(set).forEach(function (k) { if (String(row[k] == null ? '' : row[k]) !== set[k]) { patch[k] = set[k]; ch = true; } });
       if (ch) { save_({ name: 'Hub import', roles: { admin: 1, bishopric: 1, member: 1 }, orgs: [], callings: [] }, tab, patch, { system: true, quiet: true }); n++; }
