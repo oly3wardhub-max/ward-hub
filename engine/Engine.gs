@@ -454,7 +454,7 @@ function today_() { var d = new Date(); return new Date(d.getFullYear(), d.getMo
 function nextSunday_(from) { var d = from ? new Date(from) : today_(); d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); return d; }
 function addDays_(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function parseYmd_(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
-/* "Jackson & S. Teacher" teaches as J. Teacher and S. Teacher. */
+/* "Pat & Sam Sample" teaches as Pat Sample and Sam Sample. */
 function teaches_(teacher, name) {
   var parts = String(teacher || '').split(/\s*(?:&|,|\band\b|\/)\s*/).filter(Boolean), k = nkey_(name);
   if (parts.length >= 2) { var last = parts[parts.length - 1].split(' ').pop(); parts = parts.map(function (p) { return p.indexOf(' ') < 0 ? p + ' ' + last : p; }); }
@@ -4879,7 +4879,7 @@ function appendRows_(tab, list) {
 }
 
 /* "Import Updates": change rows that are already there. Columns: Tab, Where, Set — e.g.
-   Callings | Person = A. Adviser; Calling = Young Women Adviser | Group = Builders of Faith
+   Callings | Person = Pat Sample; Calling = Young Women Adviser | Group = Builders of Faith
    Every row matching all the Where parts gets the Set values. Safe to run again. */
 function importUpdates_(sh) {
   var vals = sh.getRange(1, 1, sh.getLastRow(), Math.max(3, sh.getLastColumn())).getValues(), head = vals[0].map(function (h) { return String(h).trim().toLowerCase(); });
