@@ -271,7 +271,7 @@
         <div class="field"><label style="width:auto;flex:1">High councilor here</label><select data-sfield="High council"><option value="">No</option>${[set.high_council].filter(Boolean).map(n => `<option ${s['High council'] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
         <div class="field"><label style="width:auto;flex:1">Stake business</label><span class="toggle"><input type="checkbox" data-sfield="Stake business" ${s['Stake business'] ? 'checked' : ''}><span></span></span></div></div>`;
       const presiding = s['Stake visitor'] || s.Presiding || set.presiding_default || 'the bishop';
-      /* The conductor says their own name; the bishop is "the bishop". */
+      /* The conductor says their own name; when the bishop conducts he uses his title (Settings › Presiding). */
       const bishopName = set.bishop || '', bishopTitle = set.presiding_default || 'the bishop';
       const conductor = s.Conducting ? (s.Conducting === bishopName ? bishopTitle : s.Conducting) : '[your name]';
       const presLine = conductor === presiding ? `I am ${esc(conductor)}, presiding and conducting today.` : `I am ${esc(conductor)}, and ${esc(presiding)} is presiding.`;
