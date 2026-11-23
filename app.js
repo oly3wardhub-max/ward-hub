@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.17.1';
+  const VERSION = '2.17.2';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -271,12 +271,14 @@
         <div class="field"><label style="width:auto;flex:1">High councilor here</label><select data-sfield="High council"><option value="">No</option>${[set.high_council].filter(Boolean).map(n => `<option ${s['High council'] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
         <div class="field"><label style="width:auto;flex:1">Stake business</label><span class="toggle"><input type="checkbox" data-sfield="Stake business" ${s['Stake business'] ? 'checked' : ''}><span></span></span></div></div>`;
       const presiding = s['Stake visitor'] || s.Presiding || set.presiding_default || 'the bishop';
-      const welcomeBits = [`We are presided over by ${esc(presiding)}.`];
-      if (s['Stake visitor'] && s.Presiding) welcomeBits.push(`We welcome ${esc(s['Stake visitor'])} of the stake presidency.`);
+      /* The conductor says their own name; the bishop is "the bishop". */
+      const bishopName = set.bishop || '', bishopTitle = set.presiding_default || 'the bishop';
+      const conductor = s.Conducting ? (s.Conducting === bishopName ? bishopTitle : s.Conducting) : '[your name]';
+      const presLine = conductor === presiding ? `I am ${esc(conductor)}, presiding and conducting today.` : `I am ${esc(conductor)}, and ${esc(presiding)} is presiding.`;
+      const welcomeBits = [presLine];
       if (s['High council']) welcomeBits.push(`We also welcome ${esc(s['High council'])} of the high council.`);
-      if (s.Conducting) welcomeBits.push(`${esc(s.Conducting)} is conducting.`);
       welcomeBits.push(`Our organist is ${esc(s.Organist || '—')}, and our chorister is ${esc(s.Chorister || '—')}.`);
-      h += `<h3>Welcome</h3><div class="say">Good morning, brothers and sisters, and welcome to sacrament meeting of the ${esc(ward)}. ${welcomeBits.join(' ')}</div>`;
+      h += `<h3>Welcome</h3><div class="say">Good morning, brothers and sisters. We are so glad that you came today. Welcome to the ${esc(ward)}. We'd like to extend a special welcome to any visitors we have today. We are here to worship Jesus Christ, and we pray that the Holy Ghost will be here with us. ${welcomeBits.join(' ')}</div>`;
       h += `<h3>Announcements</h3><div class="say">${d.announcements.length ? '<ul>' + d.announcements.map(a => `<li>${esc(a.text)}</li>`).join('') + '</ul>' : 'None'}
         <div class="noprint" style="display:flex;gap:8px;margin-top:10px"><input id="lastmin" placeholder="Add a last-minute announcement" style="flex:1;border:0;background:var(--card2);border-radius:10px;padding:10px 12px;font-size:16px;min-width:0"><button class="btn small" data-act="lastMin">Add</button></div></div>`;
       h += `<h3>Opening hymn</h3><div class="say">${hy('Opening hymn')}</div>`;
