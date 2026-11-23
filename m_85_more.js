@@ -218,7 +218,7 @@
     WH.routes.health.view = function () {
       orig.apply(this, arguments);
       const add = () => { const b = document.getElementById('body'); if (!b || !b.querySelector('[data-act="hlRun"]')) return setTimeout(add, 150); if (b.querySelector('#hlMore')) return;
-        b.querySelector('[data-act="hlRun"]').closest('.btns').insertAdjacentHTML('afterend', `<div id="hlMore" class="btns"><button class="btn gray" data-go="#/x/emails">Emails that would go out</button><button class="btn gray" data-act="hlBackup">Back up now</button></div><p class="foot">Backups are copies of the spreadsheet in Google Drive › Ward Hub backups, made every Sunday night.</p>`); };
+        b.querySelector('[data-act="hlRun"]').closest('.btns').insertAdjacentHTML('afterend', `<div id="hlMore" class="btns"><button class="btn gray" data-go="#/x/emails">Emails that would go out</button><button class="btn gray" data-act="hlBackup">Back up now</button><button class="btn gray" data-act="hlFresh">Refresh from the spreadsheet</button></div><p class="foot">Backups are copies of the spreadsheet in Google Drive › Ward Hub backups, made every Sunday night. Changes typed straight into the spreadsheet show in the Hub within a few minutes; Refresh shows them now.</p>`); };
       add();
     };
   });
@@ -237,6 +237,7 @@
     async emSee(el) {
       try { const r = await WH.call('emailPreview', { i: +el.dataset.i }); WH.openSheet(`<header><span style="min-width:64px"></span><h2>Preview</h2><button class="link r" data-act="close">Done</button></header><iframe sandbox="" title="Email preview" srcdoc="${WH.esc(r.sample)}" style="width:100%;height:70vh;border:0;border-radius:12px;background:#fff"></iframe>`); } catch (e) { WH.toast(e.message); }
     },
+    async hlFresh(el) { el.innerHTML = '<span class="spin"></span>'; try { await WH.call('refreshData', {}); WH.toast('Every list was read fresh from the spreadsheet', true); } catch (e) { WH.toast(e.message); } el.textContent = 'Refresh from the spreadsheet'; },
     async hlBackup(el) { el.innerHTML = '<span class="spin"></span>'; try { const r = await WH.call('runJob', { job: 'backup' }); WH.toast((r.jobs.backup || {}).note || 'Done', true); } catch (e) { WH.toast(e.message); } el.textContent = 'Back up now'; }
   });
 })();

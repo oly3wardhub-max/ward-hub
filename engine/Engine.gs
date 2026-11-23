@@ -131,7 +131,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.16.2';
+var VERSION = '2.17.0';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -151,6 +151,7 @@ var PUBLIC_ACTIONS = { hello: 1, link: 1 };
 function handle_(req) {
   var t0 = Date.now(); MEMO_ = {};
   try {
+    outsideEdits_();
     var a = String(req.action || '');
     if (!ACTIONS[a]) return { ok: false, error: 'Unknown action' };
     var me = null;
@@ -211,7 +212,7 @@ function toIn_(v, type) {
 /* Read a whole tab as objects. Kept in memory for this request, and in the script cache (in pieces) until the next write to that tab. */
 var MEMO_ = {};
 function rows_(name) {
-  var cache = CacheService.getScriptCache(), ver = PropertiesService.getScriptProperties().getProperty('v:' + name) || '0';
+  var props = PropertiesService.getScriptProperties(), cache = CacheService.getScriptCache(), ver = (props.getProperty('v:' + name) || '0') + '.' + (props.getProperty('v:ext') || '0');
   var ck = 'tab:' + name + ':' + ver;
   if (MEMO_[ck]) return MEMO_[ck];
   try {
@@ -243,7 +244,22 @@ function rows_(name) {
   } catch (e) {}
   return (MEMO_[ck] = out);
 }
-function bump_(name) { var p = PropertiesService.getScriptProperties(); p.setProperty('v:' + name, Date.now().toString(36) + Math.random().toString(36).slice(2, 6)); if (name === 'Settings') { SET_CACHE_ = null; TZ_ = null; } }
+function bump_(name) { var p = PropertiesService.getScriptProperties(); p.setProperty('v:' + name, Date.now().toString(36) + Math.random().toString(36).slice(2, 6)); p.setProperty('ext:hub', String(Date.now())); if (name === 'Settings') { SET_CACHE_ = null; TZ_ = null; } }
+
+/* Changes made straight to the spreadsheet (by hand, or by Claude through Google Sheets) don't go through save_, so the Hub's
+   quick copies of each list wouldn't know about them. At most every 2 minutes a request asks Drive when the file last changed;
+   if that's later than the Hub's own last save, every list is read fresh. More › Health › Refresh from the spreadsheet does it now. */
+function outsideEdits_(force) {
+  var c = CacheService.getScriptCache(); if (!force && c.get('ext:chk')) return false; c.put('ext:chk', '1', 120);
+  try {
+    var p = PropertiesService.getScriptProperties(), seen = +(p.getProperty('ext:seen') || 0), mine = +(p.getProperty('ext:hub') || 0);
+    var upd = DriveApp.getFileById(ss_().getId()).getLastUpdated().getTime();
+    var changed = force || (upd > seen && upd > mine + 15000);
+    if (changed) { p.setProperty('v:ext', Date.now().toString(36)); MEMO_ = {}; SET_CACHE_ = null; TZ_ = null; }
+    p.setProperty('ext:seen', String(upd));
+    return changed;
+  } catch (e) { return false; }
+}
 
 /* ---------------- settings ---------------- */
 var SET_CACHE_ = null;
@@ -1723,6 +1739,7 @@ function jobRecord_(name, fn) {
 function nightly() {
   jobRecord_('sources', readSources_);
   jobRecord_('meetings', function () { ensureMeetings_(); return 'ok'; });
+  jobRecord_('outside edits', function () { return outsideEdits_(true) ? 'lists refreshed' : 'ok'; });
   jobRecord_('sundays', sundayTypes_);
   jobRecord_('lessons', lessonPlan_);
   jobRecord_('names', nameTags_);
@@ -1815,6 +1832,13 @@ function tidy_() {
   if (n > 3000) { sh.deleteRows(3001, n - 3000); bump_('Log'); return 'log trimmed'; }
   return 'ok';
 }
+
+/* More › Health › Refresh from the spreadsheet: read every list fresh after changes made straight to the sheet. */
+ACTIONS.refreshData = function (req, me) {
+  if (!(me.roles.admin || isBishopric_(me))) throw new Error('The executive secretary or bishopric refreshes the Hub.');
+  outsideEdits_(true); log_(me.name, 'refresh', '', '', 'read every list fresh from the spreadsheet');
+  return { refreshed: true };
+};
 
 
 /* ================= Extras: speaker and prayer ideas, scanning a calendar with Gemini ================= */
