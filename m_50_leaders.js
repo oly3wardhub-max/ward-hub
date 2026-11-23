@@ -104,24 +104,7 @@
   };
   /* Open tasks are grouped: overdue, this week and next week (weeks end on Sunday), then one group per month, then no date.
      The near groups start open and later months start closed; each viewer's choice is remembered on their phone. */
-  function tkWeekEnd(n) { const d = WH.today(); d.setDate(d.getDate() + ((7 - d.getDay()) % 7) + 7 * n); return WH.ymd(d); }
-  function tkGroups(list, t) {
-    const w0 = tkWeekEnd(0), w1 = tkWeekEnd(1), byDue = (a, b) => a.Due < b.Due ? -1 : a.Due > b.Due ? 1 : 0;
-    const groups = [], add = (k, label, open, items) => { if (items.length) groups.push({ k, label, open, items }); };
-    const dated = list.filter(x => x.Due).sort(byDue);
-    add('over', 'Overdue', true, dated.filter(x => x.Due < t));
-    add('w0', 'This week · through ' + WH.fmt(w0, { weekday: 'short', month: 'short', day: 'numeric' }), true, dated.filter(x => x.Due >= t && x.Due <= w0));
-    const n1 = WH.pd(w0); n1.setDate(n1.getDate() + 1);
-    add('w1', 'Next week · ' + WH.fmt(WH.ymd(n1)) + ' – ' + WH.fmt(w1), true, dated.filter(x => x.Due > w0 && x.Due <= w1));
-    const later = dated.filter(x => x.Due > w1), months = [];
-    later.forEach(x => { const m = x.Due.slice(0, 7); if (!months.includes(m)) months.push(m); });
-    months.forEach(m => {
-      const name = WH.pd(m + '-01').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-      add('m' + m, (m === w1.slice(0, 7) ? 'Later in ' : '') + name, false, later.filter(x => x.Due.slice(0, 7) === m));
-    });
-    add('none', 'No due date', false, list.filter(x => !x.Due));
-    return groups;
-  }
+  const tkWeekEnd = n => WH.weekEnd(n), tkGroups = list => WH.dueGroups(list, x => x.Due);
   function tkOpenState() { try { return JSON.parse(localStorage.getItem('wh:tkopen') || '{}'); } catch (e) { return {}; } }
   function tkIsOpen(g) { const s = tkOpenState(); return g.k in s ? !!s[g.k] : g.open; }
   function tkRemember(k, open) { try { const s = tkOpenState(); s[k] = open; localStorage.setItem('wh:tkopen', JSON.stringify(s)); } catch (e) { } }

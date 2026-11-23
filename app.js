@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.18.3';
+  const VERSION = '2.18.4';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -191,12 +191,18 @@
           d.checklist.map(c => `<div class="row ${c.done ? 'done' : ''}"><button data-act="check" data-id="${c.id}" data-on="${c.done ? 1 : 0}" aria-label="Done" style="background:none;border:0;padding:4px 6px 4px 0;margin:0"><span class="check ${c.done ? 'on' : ''}"></span></button><button class="main" ${c.go ? `data-go="${esc(c.go)}"` : ''} style="background:none;border:0;padding:0;text-align:left;color:inherit;font:inherit"><div class="t">${esc(c.text)}</div>${c.done ? `<div class="s">${esc(c.done)}</div>` : ''}</button>${c.go ? I.chev : ''}</div>`).join('') + '</div>';
       }
       const shut = !!store.get('needsShut'), urgent = d.needs.filter(n => n.kind === 'emergency'), shown = shut ? urgent : d.needs;
-      h += `<button class="section-h big" data-act="needsToggle" style="width:100%;background:none;border:0;color:inherit;cursor:pointer;text-align:left" aria-expanded="${!shut}"><span>Needs you</span><span style="display:flex;align-items:center;gap:8px">${d.needs.length ? `<span class="chip">${d.needs.length}</span>` : ''}<span style="color:var(--accent);font-size:15px;font-weight:500">${shut ? 'Show' : 'Hide'}</span></span></button>`;
-      h += shut && !urgent.length ? '' : shown.length ? '<div class="list">' + shown.map(n => {
+      h += `<button class="section-h big" data-act="needsToggle" style="width:100%;background:none;border:0;color:inherit;cursor:pointer;text-align:left" aria-expanded="${!shut}"><span>Needs you</span><span style="display:flex;align-items:center;gap:8px">${(() => { const c = d.needs.filter(n => n.kind === 'emergency' || (n.due ? n.due <= weekEnd(0) : n.kind !== 'task')).length; return c ? `<span class="chip" title="Due this week">${c}</span>` : ''; })()}<span style="color:var(--accent);font-size:15px;font-weight:500">${shut ? 'Show' : 'Hide'}</span></span></button>`;
+      /* Only what's due this week (and undated things to approve or check) shows flat; later items fold by week and month. */
+      const wEnd = weekEnd(0), nowItems = shown.filter(n => n.kind === 'emergency' || (n.due ? n.due <= wEnd : n.kind !== 'task'));
+      const laterGroups = shut ? [] : dueGroups(shown.filter(n => !nowItems.includes(n)), n => n.due).map(g => Object.assign(g, { open: false }));
+      const needRow = n => {
         const late = n.due && n.due < ymd(today());
         const go = n.kind === 'emergency' ? 'data-go="#/x/emergency" style="background:var(--red-tint)"' : n.kind === 'sunday' ? `data-go="#/sunday/${n.id}"` : n.kind === 'task' ? `data-act="task" data-id="${esc(n.id)}"` : n.kind === 'announcements' ? `data-go="#/x/announcements"` : n.kind === 'lcr' ? `data-go="#/x/changes"` : n.kind === 'callings' ? `data-go="#/x/changes"` : n.kind === 'inbox' ? `data-go="#/x/inbox"` : n.kind === 'training' ? `data-go="#/x/training"` : n.kind === 'teach' && n.link ? `data-act="openUrl" data-url="${esc(n.link)}"` : '';
-        return `<button class="row wrap" ${go}><div class="main"><div class="t">${esc(n.title)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>${n.due ? `<span class="chip ${late ? 'red' : rel(n.due) === 'Today' ? 'orange' : ''}">${esc(rel(n.due))}</span>` : ''}${go ? I.chev : ''}</button>`;
-      }).join('') + '</div>' : `<div class="list"><div class="empty">Nothing needs you right now.</div></div>`;
+        return `<button class="row wrap" ${go}><div class="main"><div class="t">${esc(n.title)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>${n.due ? `<span class="chip ${late ? 'red' : rel(n.due) === 'Today' ? 'orange' : ''}">${esc(n.due <= wEnd ? rel(n.due) : fmt(n.due))}</span>` : ''}${go ? I.chev : ''}</button>`;
+      };
+      const nOpen = store.get('needsOpen', {});
+      h += shut && !urgent.length ? '' : (nowItems.length ? '<div class="list">' + nowItems.map(needRow).join('') + '</div>' : `<div class="list"><div class="empty">${laterGroups.length ? 'Nothing due this week.' : 'Nothing needs you right now.'}</div></div>`) +
+        laterGroups.map(g => `<details class="tkgrp" data-k="${g.k}"${(g.k in nOpen ? nOpen[g.k] : g.open) ? ' open' : ''}><summary class="section-h"><span>${esc(g.label)}</span><span class="tkn">${g.items.length}</span></summary><div class="list">${g.items.map(needRow).join('')}</div></details>`).join('');
       if (d.sunday) {
         const sv = d.sunday;
         h += `<div class="section-h big"><span>${rel(sv.date) === 'Today' ? 'Today' : 'This Sunday'}</span><a href="#/sunday/${sv.date}">Plan</a></div>
@@ -210,7 +216,23 @@
       const quick = (WH.quick || []).filter(q => !q.show || q.show());
       if (quick.length) h += `<div class="section-h big"><span>Shortcuts</span></div><div class="quick">${quick.map(q => `<button class="qbtn" data-go="${q.href}"><span class="icon" style="background:${q.color}">${q.icon}</span><span>${esc(q.title)}</span></button>`).join('')}</div>`;
       $('#body').innerHTML = h;
+      document.querySelectorAll('#body details.tkgrp').forEach(el => el.addEventListener('toggle', () => { const o = store.get('needsOpen', {}); o[el.dataset.k] = el.open; store.set('needsOpen', o); }));
     });
+  }
+  /* Groups dated items: overdue, this week and next week (weeks end on Sunday), one group per month, then no date. */
+  function weekEnd(n) { const d = today(); d.setDate(d.getDate() + ((7 - d.getDay()) % 7) + 7 * n); return ymd(d); }
+  function dueGroups(list, due) {
+    const t = ymd(today()), w0 = weekEnd(0), w1 = weekEnd(1), groups = [], add = (k, label, open, items) => { if (items.length) groups.push({ k, label, open, items }); };
+    const dated = list.filter(x => due(x)).sort((a, b) => due(a) < due(b) ? -1 : due(a) > due(b) ? 1 : 0);
+    add('over', 'Overdue', true, dated.filter(x => due(x) < t));
+    add('w0', 'This week · through ' + fmt(w0, { weekday: 'short', month: 'short', day: 'numeric' }), true, dated.filter(x => due(x) >= t && due(x) <= w0));
+    const n1 = pd(w0); n1.setDate(n1.getDate() + 1);
+    add('w1', 'Next week · ' + fmt(ymd(n1)) + ' – ' + fmt(w1), true, dated.filter(x => due(x) > w0 && due(x) <= w1));
+    const later = dated.filter(x => due(x) > w1), months = [];
+    later.forEach(x => { const m = due(x).slice(0, 7); if (!months.includes(m)) months.push(m); });
+    months.forEach(m => add('m' + m, (m === w1.slice(0, 7) ? 'Later in ' : '') + pd(m + '-01').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }), false, later.filter(x => due(x).slice(0, 7) === m)));
+    add('none', 'No due date', false, list.filter(x => !due(x)));
+    return groups;
   }
   function hymnBlocks(hy) {
     const ks = Object.keys(hy || {}); if (!ks.length) return '';
@@ -473,7 +495,7 @@
   }
 
   /* ---------- shared with the feature files (program.js, messages.js, …) ---------- */
-  Object.assign(WH, { partForm, legacyCalendar: viewCalendar, S, store, call, cached, screen, form, openSheet, closeSheet, toast, esc, kv, skeleton, errorBox, pd, ymd, today, fmt, long, rel, nextSun, I, ORGCOLOR, statusChip, statusDot, loadNames, DATALISTS, route, hymnBlocks, weekList,
+  Object.assign(WH, { partForm, legacyCalendar: viewCalendar, weekEnd, dueGroups, S, store, call, cached, screen, form, openSheet, closeSheet, toast, esc, kv, skeleton, errorBox, pd, ymd, today, fmt, long, rel, nextSun, I, ORGCOLOR, statusChip, statusDot, loadNames, DATALISTS, route, hymnBlocks, weekList,
     can: r => !!((S.boot && S.boot.me.roles) || {})[r], isBish: () => { const r = (S.boot && S.boot.me.roles) || {}; return !!(r.admin || r.bishopric); }, sunCache: () => sunCache });
   WH.ready.forEach(f => { try { f(); } catch (e) { console.error(e); } });
 

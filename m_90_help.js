@@ -16,7 +16,7 @@
 
   const G = {
     install: ['Put it on your Home Screen', 'In the Hub, More › Add to Home Screen › Copy your sign-in link. iPhone: tap Share, then Add to Home Screen; open the new icon, paste the link once and tap Sign in (Home Screen apps keep their own sign-in). Android: in Chrome tap ⋮, then Install app. It opens like any other app from then on.'],
-    today: ['Today', 'Start here. "Needs you" lists what\'s yours, soonest first: tasks, Sundays that need speakers, lessons you teach, things to approve. Tap any item to act on it.'],
+    today: ['Today', 'Start here. "Needs you" lists what\'s yours this week, soonest first: tasks, Sundays that need speakers, lessons you teach, things to approve. Later items fold into Next week and one group per month; tap a group to open it. Tap any item to act on it.'],
     msgs: ['Text a group', 'More › Messages. Pick who (your whole organization, a class, a zone, a saved group), type or pick a message, and tap a button. Your phone opens Messages with the names filled in. Texts come from your own phone, so replies come to you.'],
     youth: ['Texting youth', 'Choose "Youth + parents" so a parent is always included, as youth protection asks.'],
     lessons: ['Lesson texts', 'More › Lesson texts shows this Sunday\'s lessons with a link to the lesson. Tap "Text this to the class."'],
