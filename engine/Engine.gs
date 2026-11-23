@@ -135,7 +135,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.18.0';
+var VERSION = '2.18.2';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -708,7 +708,11 @@ function onOpen() {
     .addToUi();
 }
 /* Builds every tab with its headings and the default settings. Safe to run again: it never deletes anything. */
+/* Google asks for each permission with its own checkbox; one left unticked stays off and Google doesn't ask again.
+   This makes Google show the permission screen again for anything still missing (run from the editor). */
+function authorize() { ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL); return 'All permissions granted.'; }
 function setUp() {
+  authorize();
   SCHEMA.tabs.forEach(function (t) {
     var sh = ss_().getSheetByName(t.name);
     if (!sh) sh = ss_().insertSheet(t.name);
