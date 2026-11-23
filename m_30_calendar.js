@@ -6,6 +6,43 @@
   const REPEAT = ['', 'Weekly', 'Every other week', 'Monthly (same weekday)'];
   let C = null;
 
+  /* One page per month for ward council and the presidents: every organization's events in a grid, colored by organization.
+     Print it, save it as a PDF, or screenshot it to text. Meetings are left off. */
+  WH.routes.calmonth = {
+    tab: 'calendar',
+    view(args) {
+      const { esc, ORGCOLOR, ymd } = WH, now = new Date();
+      let ym = (args && args[0]) || ''; if (!/^\d{4}-\d\d$/.test(ym)) { const d = new Date(now.getFullYear(), now.getMonth() + (now.getDate() >= 20 ? 1 : 0), 1); ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+      const [Y, M] = ym.split('-').map(Number), first = new Date(Y, M - 1, 1), last = new Date(Y, M, 0), title = first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const shift = n => { const d = new Date(Y, M - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+      WH.screen(title, 'The whole ward, by organization', WH.skeleton(6), { back: '#/calendar', backLabel: 'Calendar' });
+      WH.cached('calm:' + ym, 'calendar', { from: ymd(first), to: ymd(last) }, d => {
+        const body = document.getElementById('body'); if (!body || !d) return; if (d.error) { body.innerHTML = WH.errorBox(d.error); return; }
+        const ev = (d.events || []).filter(e => !e.meeting && (!e.status || e.status === 'Approved')), by = {};
+        ev.forEach(e => { const a = e.date, b = e.end && e.end > a ? e.end : a; for (let t = new Date(WH.pd(a)); ymd(t) <= b; t.setDate(t.getDate() + 1)) { const k = ymd(t); if (k >= ymd(first) && k <= ymd(last)) (by[k] = by[k] || []).push(Object.assign({ cont: k !== a }, e)); } });
+        const ward = (WH.S.boot.settings && WH.S.boot.settings.ward_name) || 'Ward';
+        const orgs = [...new Set(ev.map(e => e.org))].sort();
+        let h = `<style>.calm,.calm *{-webkit-print-color-adjust:exact;print-color-adjust:exact}@media print{@page{size:landscape;margin:.4in}.calm td{height:84px}.calm{font-size:9.5px}}</style>
+          <div class="btns noprint" style="margin-top:0"><button class="btn gray small" data-go="#/x/calmonth/${shift(-1)}">‹ ${esc(new Date(Y, M - 2, 1).toLocaleDateString('en-US', { month: 'short' }))}</button><button class="btn small" onclick="window.print()">Print or save as PDF</button><button class="btn gray small" data-go="#/x/calmonth/${shift(1)}">${esc(new Date(Y, M, 1).toLocaleDateString('en-US', { month: 'short' }))} ›</button></div>
+          <h2 style="margin:6px 4px 4px;font-size:20px">${esc(ward)} · ${esc(title)}</h2>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin:0 4px 8px;font-size:12px">${orgs.map(o => `<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:10px;height:10px;border-radius:2px;background:${ORGCOLOR[o] || '#8E8E93'};display:inline-block"></i>${esc(o)}</span>`).join('')}</div>
+          <div style="overflow-x:auto"><table class="calm" style="width:100%;min-width:640px;border-collapse:collapse;table-layout:fixed;font-size:11px"><tr>${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => `<th style="padding:4px;border:1px solid var(--sep,#ccc);font-size:11px">${w}</th>`).join('')}</tr>`;
+        let day = 1 - first.getDay();
+        while (day <= last.getDate()) {
+          h += '<tr>';
+          for (let i = 0; i < 7; i++, day++) {
+            if (day < 1 || day > last.getDate()) { h += '<td style="border:1px solid var(--sep,#ccc);background:var(--card2,#f4f4f4)"></td>'; continue; }
+            const k = ymd(new Date(Y, M - 1, day)), list = (by[k] || []).sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+            h += `<td style="vertical-align:top;border:1px solid var(--sep,#ccc);padding:3px;height:96px"><div style="font-weight:700;font-size:12px">${day}</div>${list.map(e => `<div style="border-left:3px solid ${ORGCOLOR[e.org] || '#8E8E93'};padding:1px 0 1px 4px;margin:2px 0;line-height:1.25">${e.time && !e.cont ? '<b>' + esc(String(e.time).replace(':00', '').replace(' ', '').toLowerCase()) + '</b> ' : ''}${esc(e.cont ? '(cont.) ' + e.title : e.title)}</div>`).join('')}</td>`;
+          }
+          h += '</tr>';
+        }
+        h += `</table></div><p class="foot noprint">Everything approved on the ward calendar for ${esc(title)}, without meetings. Share it in ward council, or save it as a PDF and text it to the presidents.</p>`;
+        body.innerHTML = h;
+      });
+    }
+  };
+
   WH.tabViews.calendar = function () {
     const { screen, cached, skeleton, errorBox } = WH;
     screen('Calendar', 'Ward, organizations and stake', skeleton(5), { right: '<span class="caladd"></span>' });
@@ -24,6 +61,7 @@
     const orgs = [...new Set(d.events.map(e => e.org))].sort(), pick = store.get('calOrg', '');
     let h = '';
     if (d.pending) h += `<div class="list" style="margin-bottom:10px"><button class="row" data-go="#/x/inbox"><div class="main"><div class="t">${d.pending} event${d.pending > 1 ? 's' : ''} waiting for approval</div><div class="s">From linked calendars and scans</div></div><span class="chip orange">Review</span>${I.chev}</button></div>`;
+    h += `<div class="btns noprint" style="margin:0 0 10px"><button class="btn gray small" data-go="#/x/calmonth">Month to print or share</button></div>`;
     h += `<div class="dates" style="margin-bottom:10px"><button class="date ${!pick ? 'on' : ''}" style="min-width:auto" data-act="calOrg" data-org=""><div class="d" style="font-size:15px;padding:4px 2px">All</div></button>${orgs.map(o => `<button class="date ${pick === o ? 'on' : ''}" style="min-width:auto" data-act="calOrg" data-org="${esc(o)}"><div class="d" style="font-size:15px;padding:4px 2px;white-space:nowrap">${esc(o)}</div></button>`).join('')}</div>`;
     const list = d.events.filter(e => !pick || e.org === pick);
     let month = '';

@@ -6,11 +6,11 @@
   WH.more.push({ title: 'Emergency plan', sub: 'What to do, by calling · works offline', href: '#/x/emergency', icon: ICON, color: '#FF3B30', order: 1, show: who, group: 'Emergency' });
   WH.quick.push({ title: 'Emergency', href: '#/x/emergency', color: '#FF3B30', icon: ICON, show: who });
   const PH = ['Right away', 'First hours', 'First days'];
-  let E = null, F = 'left', Q = '';
+  let E = null, F = 'left', Q = '', PRINT = false;
   WH.routes.emergency = {
     view() {
       WH.screen('Emergency plan', 'What to do, step by step', WH.skeleton(5), { back: '#/more', backLabel: 'More' });
-      WH.cached('emergency', 'emergency', {}, (d, first) => { if (!d) return; if (d.error) { document.getElementById('body').innerHTML = WH.errorBox(d.error); return; } E = d; draw(); });
+      WH.cached('emergency', 'emergency', { board: true }, (d, first) => { if (!d) return; if (d.error) { document.getElementById('body').innerHTML = WH.errorBox(d.error); return; } E = d; draw(); flush(); });
     }
   };
   const tel = p => String(p || '').replace(/[^\d+]/g, '');
@@ -35,10 +35,10 @@
       ${info.map(r => `<div class="row wrap"><div class="main"><div class="t">${esc(r.Title)}</div><div class="s">${esc(r.Text)}</div></div>${r.Phone ? `<a class="btn small gray" style="text-decoration:none" href="tel:${tel(r.Phone)}">Call</a>` : ''}</div>`).join('')}</div>`;
     h += `<div class="section-h"><span>Ward council</span></div><div class="list">${d.contacts.map(c => `<div class="row"><div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc(c.calling)}</div></div>${c.phone ? `<a class="btn small gray" style="text-decoration:none" href="tel:${tel(c.phone)}">Call</a><a class="btn small gray" style="text-decoration:none;margin-left:6px" href="sms:${tel(c.phone)}">Text</a>` : ''}</div>`).join('')}</div>`;
     /* the check-first list, kept before any emergency */
-    if (!d.active && d.canCheck) h += d.check ? `<div class="section-h big"><span>Check first</span><span class="chip orange">${d.check.counts.first}</span></div><p class="foot" style="margin-top:-4px">Households to check on first: those who live alone, are elderly, or have medical or special needs. Tap the star.</p><div class="search">${I.search}<input id="emq" type="search" placeholder="Search households" value="${esc(Q)}"></div><div class="list">${d.check.list.filter(x => !Q || (x.household + ' ' + x.people.join(' ')).toLowerCase().includes(Q)).slice(0, 120).map(x => `<button class="row" data-act="emFirst" data-h="${esc(x.household)}" data-on="${x.first ? 0 : 1}"><span style="font-size:20px;width:26px;color:var(--${x.first ? 'orange' : 'sub'})">${x.first ? '★' : '☆'}</span><div class="main"><div class="t">${esc(x.household)}</div><div class="s">${esc(x.people.join(', '))}</div></div></button>`).join('')}</div>`
+    if (!PRINT && !d.active && d.canCheck) h += d.check ? `<div class="section-h big"><span>Check first</span><span class="chip orange">${d.check.counts.first}</span></div><p class="foot" style="margin-top:-4px">Households to check on first: those who live alone, are elderly, or have medical or special needs. Tap the star.</p><div class="search">${I.search}<input id="emq" type="search" placeholder="Search households" value="${esc(Q)}"></div><div class="list">${d.check.list.filter(x => !Q || (x.household + ' ' + x.people.join(' ')).toLowerCase().includes(Q)).slice(0, 120).map(x => `<button class="row" data-act="emFirst" data-h="${esc(x.household)}" data-on="${x.first ? 0 : 1}"><span style="font-size:20px;width:26px;color:var(--${x.first ? 'orange' : 'sub'})">${x.first ? '★' : '☆'}</span><div class="main"><div class="t">${esc(x.household)}</div><div class="s">${esc(x.people.join(', '))}</div></div></button>`).join('')}</div>`
       : '<div class="btns"><button class="btn gray" data-act="emBoard">Keep the check-first list</button></div>';
     /* check-in */
-    if (d.active && d.check) {
+    if (!PRINT && d.active && d.check) {
       const c = d.check.counts, L = d.check.list.filter(x => (F === 'all' || (F === 'left' && !x.status) || (F === 'help' && x.status === 'Needs help') || (F === 'urgent' && x.status === 'Urgent') || (F === 'cant' && x.status === "Can't reach") || (F === 'safe' && x.status === 'Safe')) && (!Q || (x.household + ' ' + x.people.join(' ')).toLowerCase().includes(Q)));
       h += `<div class="section-h big"><span>Check on every household</span></div>
         <div class="seg" style="flex-wrap:wrap">${[['left', 'Not yet', c.left], ['urgent', 'Urgent', c.urgent], ['help', 'Needs help', c.help], ['cant', "Can't reach", c.cant], ['safe', 'Safe', c.safe], ['all', 'All', c.total]].map(o => `<button class="${F === o[0] ? 'on' : ''}" data-act="emF" data-f="${o[0]}">${o[1]} ${o[2]}</button>`).join('')}</div>
@@ -50,7 +50,15 @@
     /* the whole plan */
     const roles = [...new Set(d.plan.filter(r => PH.indexOf(r.Phase) >= 0 || r.Phase === 'Before').map(r => r.Role))];
     h += `<div class="section-h big"><span>The whole plan</span></div><div class="list">${roles.map(role => `<details class="row wrap" style="display:block"><summary style="font-size:17px;padding:2px 0;cursor:pointer">${esc(role)}${mine.indexOf(role) >= 0 ? ' <span class="chip blue">You</span>' : ''}</summary><div style="margin-top:6px">${['Before'].concat(PH).map(ph => { const rs = d.plan.filter(r => r.Role === role && r.Phase === ph).sort((a, b) => (+a.Order || 0) - (+b.Order || 0)); return rs.length ? `<div class="foot" style="margin:8px 0 2px;text-transform:uppercase">${esc(ph === 'Before' ? 'Before an emergency' : ph)}</div>` + rs.map(r => `<div style="margin:4px 0 8px" ${d.canEdit ? `data-act="emStep" data-id="${esc(r.ID)}" role="button"` : ''}><b>${esc(r.Title)}.</b> ${esc(r.Text)}${d.canEdit ? ' <span style="color:var(--accent)">Edit</span>' : ''}</div>`).join('') : ''; }).join('')}</div></details>`).join('')}</div>${d.canEdit ? '<div class="btns"><button class="btn gray" data-act="emStep">Add a step</button></div>' : ''}
-      <p class="foot">Saved on this phone, so it opens without a connection.${d.canEdit ? ' Tap any step to change it, or Add a step: one step per role and stage, or a hazard card (stage "Hazard", role = the hazard).' : ''}${d.plan.some(r => r.Notes === 'Starter plan') ? ' This is the starter plan from the Church\'s ward emergency planning guide until the ward\'s own plan is entered.' : ''}</p>`;
+      <p class="foot">Saved on this phone${d.check ? ', with the household list,' : ''} so it opens without a connection. Marks made without a signal are kept and sent when the signal returns.${d.canEdit ? ' Tap any step to change it, or Add a step: one step per role and stage, or a hazard card (stage "Hazard", role = the hazard).' : ''}${d.plan.some(r => r.Notes === 'Starter plan') ? ' This is the starter plan from the Church\'s ward emergency planning guide until the ward\'s own plan is entered.' : ''}</p>`;
+    const pend = (WH.store.get('emQueue', []) || []).length;
+    if (pend) h = `<div class="list" style="background:var(--orange-tint,#FFF4E5)"><div class="row wrap"><div class="main"><div class="t" style="font-weight:600">${pend} mark${pend > 1 ? 's' : ''} saved on this phone</div><div class="s">They send by themselves when there's a signal again.</div></div><button class="btn small gray noprint" data-act="emFlush">Send now</button></div></div>` + h;
+    if (!PRINT) h += `<div class="btns noprint"><button class="btn gray" data-act="emPrint">Print a paper copy</button></div><p class="foot noprint">Keep a printed copy in the emergency binder: the whole plan, ward council phones${d.check ? ' and every household with phone numbers' : ''}, for when phones and power are down.</p>`;
+    if (PRINT) {
+      h = h.replace(/<details /g, '<details open ');
+      if (d.check) h += `<div class="section-h big"><span>Households (${d.check.list.length})</span></div><table style="width:100%;border-collapse:collapse;font-size:12px">${d.check.list.map(x => `<tr style="border-bottom:1px solid #ccc"><td style="padding:3px 4px;vertical-align:top;width:22%"><b>${x.first ? '★ ' : ''}${esc(x.household)}</b></td><td style="padding:3px 4px;vertical-align:top">${esc(x.people.join(', '))}</td><td style="padding:3px 4px;vertical-align:top;white-space:nowrap">${(x.phones || []).map(p => esc(p.n.split(' ')[0] + ' ' + p.p)).join('<br>')}</td><td style="width:18%;border-left:1px solid #ccc">&nbsp;</td></tr>`).join('')}</table>`;
+      h = `<p class="foot">Printed ${esc(new Date().toLocaleDateString())} · Confidential: keep in the ward emergency binder.</p>` + h;
+    }
     document.getElementById('body').innerHTML = h;
     const q = document.getElementById('emq'); if (q) q.addEventListener('input', () => { Q = q.value.trim().toLowerCase(); const pos = q.selectionStart; draw(); const n = document.getElementById('emq'); n.focus(); n.setSelectionRange(pos, pos); });
   }
@@ -59,7 +67,30 @@
     const help = E.check.list.filter(x => /Needs help|Urgent/.test(x.status)).map(x => x.household + (x.needs ? ' (' + x.needs + ')' : '')).slice(0, 12);
     return `${E.active.drill ? 'PRACTICE DRILL. ' : ''}${WH.S.boot.settings && WH.S.boot.settings.ward_name || 'Ward'} report, ${E.active.name}: ${c.total} households · ${c.safe} safe · ${c.urgent || 0} urgent · ${c.help} need help · ${c.cant} can't reach · ${c.left} not yet checked.${help.length ? ' Needs: ' + help.join('; ') + '.' : ''} Missionaries: ___. Meetinghouse: ___.`;
   }
+  const stamp = () => { const d = new Date(), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; };
+  const queue = m => { const q = WH.store.get('emQueue', []) || []; q.push(m); WH.store.set('emQueue', q); };
+  function recount() { const L = E.check.list, n = st => L.filter(x => x.status === st).length; Object.assign(E.check.counts, { safe: n('Safe'), help: n('Needs help'), urgent: n('Urgent'), cant: n("Can't reach"), left: n('') }); }
+  let flushing = false;
+  async function flush() {
+    const q = WH.store.get('emQueue', []) || []; if (!q.length || flushing || !navigator.onLine) return;
+    flushing = true; const left = [];
+    for (const m of q) { try { await WH.call('checkIn', m); } catch (e) { if (!navigator.onLine || /fetch|network|Load failed/i.test(e.message)) left.push(m); else WH.toast(m.household + ': ' + e.message); } }
+    WH.store.set('emQueue', left); flushing = false;
+    if (left.length < q.length) { WH.toast((q.length - left.length) + ' saved mark' + (q.length - left.length > 1 ? 's' : '') + ' sent', true); if (E && location.hash.indexOf('emergency') >= 0) { WH.store.del('c:emergency'); WH.routes.emergency.view(); } }
+  }
+  window.addEventListener('online', flush);
+  /* Keep the plan and household list on the phone: once a day, quietly, for everyone who sees the plan. */
+  window.addEventListener('load', () => setTimeout(async () => {
+    try {
+      if (!WH.S || !WH.S.boot || !who()) return;
+      flush();
+      const today = new Date().toDateString(); if (WH.store.get('emAt') === today) return;
+      const d = await WH.call('emergency', { board: true }); WH.store.set('c:emergency', d); WH.store.set('emAt', today);
+    } catch (e) { }
+  }, 5000));
   Object.assign(WH.act, {
+    emFlush() { flush(); },
+    emPrint() { PRINT = true; draw(); setTimeout(() => { window.print(); PRINT = false; draw(); }, 300); },
     emF(el) { F = el.dataset.f; draw(); },
     emStep(el) {
       const r = el.dataset.id ? E.plan.find(x => x.ID === el.dataset.id) : { Phase: 'Right away', Role: 'Everyone', Order: 1 };
@@ -83,8 +114,11 @@
     async emMark(el) {
       const s = el.dataset.s, h = el.dataset.h; let needs = '';
       if (s === 'Needs help' || s === 'Urgent') { needs = prompt(s === 'Urgent' ? 'What happened? (injured, trapped, fire…) Call 911 first for anything life-threatening.' : 'What do they need? (medical, shelter, food, utilities…)') || ''; }
-      if (!navigator.onLine) { WH.toast('No connection. Text the bishop instead.'); return; }
-      try { const r = await WH.call('checkIn', { household: h, status: s, needs }); const x = E.check.list.find(y => y.household === h); Object.assign(x, { status: s, needs, by: WH.S.boot.me.name }); E.check.counts = r.counts; WH.store.set('c:emergency', E); draw(); } catch (e) { WH.toast(e.message); }
+      const mark = { household: h, status: s, needs, when: stamp(), event: E.active && E.active.id };
+      const local = () => { const x = E.check.list.find(y => y.household === h); const was = x.status; Object.assign(x, { status: s, needs, by: WH.S.boot.me.name }); recount(); WH.store.set('c:emergency', E); draw(); return was; };
+      if (!navigator.onLine) { queue(mark); local(); WH.toast('Saved on this phone. It sends when there\'s a signal.'); return; }
+      try { const r = await WH.call('checkIn', mark); local(); E.check.counts = r.counts; WH.store.set('c:emergency', E); draw(); }
+      catch (e) { if (!navigator.onLine || /fetch|network|Load failed/i.test(e.message)) { queue(mark); local(); WH.toast('Saved on this phone. It sends when there\'s a signal.'); } else WH.toast(e.message); }
     }
   });
 })();

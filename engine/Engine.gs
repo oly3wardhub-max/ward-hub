@@ -19,7 +19,7 @@ var SCHEMA = {"tabs":[
   {"name":"Teaching","section":"Teaching","cols":[["ID","id"],["Organization","org"],["Class","text"],["Date","date"],["Teacher","text"],["Lesson","text"],["Link","link"],["Summary","text"],["Reminded","date"]],"read":["admin","bishopric","clerk","leader","teacher"],"edit":["admin","bishopric","leader"],"scope":"Organization","note":"Who teaches what, each Sunday.","help":["","","","","","","","",""]},
   {"name":"Meetings","section":"Leaders","cols":[["ID","id"],["Type","choice:Bishopric,Ward council,Youth council,Presidency,Missionary coordination,Temple & family history coordination,PEC,Other"],["Organization","org"],["Date","date"],["Time","time"],["Status","choice:Planned,Held,Cancelled"],["Opening prayer","person"],["Spiritual thought","person"],["Closing prayer","person"],["Notes","text"],["Summary","text"],["Transcript","text"],["Minutes sent","date"]],"read":["admin","bishopric","clerk"],"edit":["admin","bishopric"],"scope":null,"note":"Meetings. Agenda items are on Agenda.","help":["","","For presidency meetings","","","","","","","","Key points the Hub drew from the recording or notes","Private Drive file (deleted after the set number of days)",""]},
   {"name":"Agenda","section":"Leaders","cols":[["ID","id"],["Meeting","ref:Meetings"],["Order","number"],["Item","text"],["Lead","text"],["Minutes","number"],["Notes","text"],["Decision","text"],["Source","text"]],"read":["admin","bishopric","clerk"],"edit":["admin","bishopric"],"scope":null,"note":"Agenda items and minutes for each meeting.","help":["","","","","","","","",""]},
-  {"name":"Tasks","section":"Leaders","cols":[["ID","id"],["Task","text"],["Owner","text"],["Organization","org"],["Due","date"],["Status","choice:Not started,In progress,Waiting,Done"],["Source","text"],["Notes","text"],["Created","date"],["Done on","date"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric","clerk","leader"],"scope":"Organization","note":"Everyone's to-dos.","help":["","","Name or calling","","","","Meeting, Sunday or calling change","","",""]},
+  {"name":"Tasks","section":"Leaders","cols":[["ID","id"],["Task","text"],["Owner","text"],["Organization","org"],["Due","date"],["Status","choice:Not started,In progress,Waiting,Done"],["Source","text"],["Notes","text"],["Created","date"],["Done on","date"],["Repeat","choice:,Yearly"]],"read":["admin","bishopric","clerk","leader"],"edit":["admin","bishopric","clerk","leader"],"scope":"Organization","note":"Everyone's to-dos.","help":["","","Name or calling","","","","Meeting, Sunday or calling change","","","","Yearly: when it's marked done, next year's copy is made"]},
   {"name":"Appointments","section":"Leaders","cols":[["ID","id"],["Date","date"],["Time","time"],["Minutes","number"],["With","choice:Bishop,First counselor,Second counselor,Executive secretary,Clerk"],["Person","person"],["Purpose","text"],["Place","text"],["Status","choice:Open,Booked,Done,Cancelled,No-show"],["Source","text"],["Phone","phone"],["Notes","text"],["Calendar event","text"],["Reminded","date"]],"read":["admin"],"edit":["admin","bishopric"],"scope":null,"note":"Interviews and appointments. Booking pages show only open or taken, never who. Counselors see names only for their own.","help":["","","","","","","Hidden from everyone but the bishopric and Kevin","","","","","","",""]},
   {"name":"Training","section":"Leaders","cols":[["ID","id"],["Person","person"],["Calling","text"],["Course","text"],["Completed","date"],["Expires","date"],["Emailed 60","date"],["Texted 30","date"],["Texted 15","date"],["Notes","text"]],"read":["admin","bishopric"],"edit":["admin"],"scope":null,"note":"Youth protection training, from the LCR report.","help":["","","","Protecting Children and Youth","","","","","",""]},
   {"name":"Recommends","section":"Leaders","cols":[["ID","id"],["Person","person"],["Type","text"],["Expires","date"],["Updated","date"]],"read":["admin","bishopric"],"edit":["admin","bishopric"],"scope":null,"note":"Temple recommend expirations. Bishopric only.","help":["","","","",""]},
@@ -74,6 +74,10 @@ var SCHEMA = {"tabs":[
   ["program_tithing", "Program", "Tithing declaration link on the online program (Auto = while open tithing times are posted)", "Auto", "Auto, Yes or No"],
   ["program_meet", "Program", "\"Ask to meet with the bishop\" link on the online program", "Yes", "Requests become a task for the executive secretary; anything written about why goes only to the bishop"],
   ["youth_activity_time", "Program", "Usual youth activity time, for activities read from a calendar grid without a time", "7:00 PM", ""],
+  ["organizer_rotation", "Sunday", "Who plans sacrament meeting, in turn (comma separated; blank = keep the order already in the Sundays tab)", "", ""],
+  ["organizer_months", "Sunday", "Months each person plans before the next takes over", "2", ""],
+  ["plan_nudge_days", "Sunday", "Remind the person planning this many days before a Sunday that still needs speakers or prayers", "28", ""],
+  ["calendar_ask_day", "Ward", "Day of the month the executive secretary asks each president for next month's calendar", "20", ""],
   ["show_quote", "Program", "Show the quote on the program", "Yes", ""],
   ["show_picture", "Program", "Picture of the Savior on the program", "Yes", ""],
   ["bishopric_weeks", "Meetings", "Bishopric meeting Sundays (1-5)", "2,4,5", ""],
@@ -131,7 +135,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.17.1';
+var VERSION = '2.18.0';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -721,6 +725,7 @@ function setUp() {
   SCHEMA.settings.forEach(function (s) { if (!have[s[0]]) save_(null, 'Settings', { Key: s[0], Section: s[1], Setting: s[2], Value: s[3], Help: s[4] }, { system: true, quiet: true }); });
   try { repairs_(); } catch (e) { log_('Hub', 'repair', '', '', String(e)); }
   try { sundayTypes_(); } catch (e) { log_('Hub', 'sundays', '', '', String(e)); }
+  try { organizerRotation_(); } catch (e) { log_('Hub', 'planners', '', '', String(e)); }
   try { CUR_NOFETCH_ = true; lessonPlan_(); } catch (e) { log_('Hub', 'lesson plan', '', '', String(e)); } finally { CUR_NOFETCH_ = false; }
   try { installJobs_(); } catch (e) { log_('Hub', 'jobs', '', '', String(e)); }
   var blank = ss_().getSheetByName('Sheet1'); if (blank && blank.getLastRow() === 0 && ss_().getSheets().length > 1) ss_().deleteSheet(blank);
@@ -1743,6 +1748,10 @@ function nightly() {
   jobRecord_('meetings', function () { ensureMeetings_(); return 'ok'; });
   jobRecord_('outside edits', function () { return outsideEdits_(true) ? 'lists refreshed' : 'ok'; });
   jobRecord_('sundays', sundayTypes_);
+  jobRecord_('planners', organizerRotation_);
+  jobRecord_('plan reminders', planNudges_);
+  jobRecord_('monthly calendar', monthlyCalendar_);
+  jobRecord_('yearly to-dos', yearlyTasks_);
   jobRecord_('lessons', lessonPlan_);
   jobRecord_('names', nameTags_);
   jobRecord_('publish', schedulePublish_);
@@ -3340,10 +3349,12 @@ ACTIONS.emergencyEnd = function (req, me) {
 };
 ACTIONS.checkIn = function (req, me) {
   if (!canCheck_(me)) throw new Error('Elders quorum and Relief Society leaders and the bishopric mark households.');
-  var act = emActive_(); if (!act) throw new Error('No emergency check-in is running.');
+  var act = emActive_(), ev = /^EM-\d{8}-\d{4}$/.test(String(req.event || '')) ? String(req.event) : '';
+  if (!act && !ev) throw new Error('No emergency check-in is running.');
+  if (ev && (!act || act.id !== ev)) act = { id: ev };
   if (['Safe', 'Needs help', 'Urgent', 'Can\'t reach'].indexOf(req.status) < 0) throw new Error('Pick Safe, Needs help, Urgent or Can\'t reach.');
   var h = String(req.household || '').slice(0, 120); if (!h) throw new Error('Pick a household.');
-  save_(null, 'Check-ins', { Event: act.id, Household: h, Status: req.status, Needs: String(req.needs || '').slice(0, 300), By: me.name, When: Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm") }, { system: true, quiet: true });
+  save_(null, 'Check-ins', { Event: act.id, Household: h, Status: req.status, Needs: String(req.needs || '').slice(0, 300), By: me.name, When: /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(String(req.when || '')) ? String(req.when) : Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd'T'HH:mm") }, { system: true, quiet: true });
   return { counts: emBoard_(me, act).counts };
 };
 
@@ -4889,6 +4900,88 @@ function importUpdates_(sh) {
     });
   });
   return n;
+}
+
+
+/* ================= The ward's rhythm: who plans each Sunday, reminders to plan, the monthly calendar, yearly to-dos ================= */
+
+/* Sacrament meeting planning goes around in blocks (2 months each by default). Any Sunday with no one planning it gets the
+   next person in turn: the order in Settings › organizer_rotation, or, when that's blank, the order already in the Sundays tab
+   (whoever followed whom last time). Nothing anyone typed is changed. */
+function organizerRotation_() {
+  var months = Math.max(1, +setting_('organizer_months') || 2), list = String(setting_('organizer_rotation') || '').split(/\s*,\s*/).filter(Boolean);
+  var S = rows_('Sundays').filter(function (s) { return /^\d{4}-\d\d-\d\d$/.test(String(s.Date)); }).sort(function (a, b) { return a.Date.localeCompare(b.Date); });
+  var mi = function (d) { var p = d.split('-'); return +p[0] * 12 + (+p[1] - 1); };
+  var next = {};
+  if (list.length) list.forEach(function (n, i) { next[n] = list[(i + 1) % list.length]; });
+  else { var prev = ''; S.forEach(function (s) { var o = s.Organizer; if (o && o !== prev) { if (prev) next[prev] = o; prev = o; } }); }
+  var cur = '', start = 0, fill = [];
+  S.forEach(function (s) {
+    if (s.Organizer) { if (s.Organizer !== cur) { cur = s.Organizer; start = mi(s.Date); } return; }
+    if (!cur || !next[cur] && mi(s.Date) - start >= months) return;
+    if (mi(s.Date) - start >= months) { cur = next[cur]; start = mi(s.Date); }
+    fill.push({ Date: s.Date, Organizer: cur });
+  });
+  fill.forEach(function (f) { save_(null, 'Sundays', f, { system: true, quiet: true }); });
+  return fill.length + ' Sundays given a planner';
+}
+
+/* What a Sunday still needs. Conference Sundays need nothing; fast Sundays and programs need the prayers; others need two speakers too. */
+function sundayNeeds_(s, parts, daysAway) {
+  var t = String(s.Type || 'Regular');
+  if (/General Conference|Stake Conference/i.test(t)) return [];
+  var live = parts.filter(function (p) { return p.Person && !/Declined/i.test(p.Status || ''); });
+  var has = function (re) { return live.filter(function (p) { return re.test(p.Role || ''); }).length; };
+  var need = [];
+  if (/^(Regular|Ward Conference)$/i.test(t)) { var sp = has(/speaker/i); if (sp < 2) need.push((2 - sp) + ' speaker' + (2 - sp > 1 ? 's' : '')); }
+  /* prayers are usually set the week of, so they only count in the last 10 days */
+  if (daysAway == null || daysAway <= 10) { if (!has(/^Invocation$/i)) need.push('invocation'); if (!has(/^Benediction$/i)) need.push('benediction'); }
+  return need;
+}
+/* A to-do for whoever is planning, once a Sunday is close and still needs people; it closes itself when the plan is full. */
+function planNudges_() {
+  var days = +setting_('plan_nudge_days') || 28, t = ymd_(today_()), until = ymd_(addDays_(today_(), days)), made = 0, closed = 0;
+  var P = rows_('Participants'), T = rows_('Tasks').filter(function (x) { return x.Source === 'Sacrament plan'; });
+  rows_('Sundays').filter(function (s) { return s.Date >= t && s.Date <= until; }).forEach(function (s) {
+    var need = sundayNeeds_(s, P.filter(function (p) { return p.Date === s.Date; }), Math.round((parseYmd_(s.Date) - today_()) / 864e5)), key = 'Sunday ' + s.Date;
+    var task = T.filter(function (x) { return String(x.Notes || '').indexOf(key) >= 0; })[0];
+    if (!need.length) { if (task && task.Status !== 'Done') { save_(null, 'Tasks', { ID: task.ID, Status: 'Done', 'Done on': t }, { system: true, quiet: true }); closed++; } return; }
+    var text = 'Plan sacrament meeting for ' + fmtDay_(s.Date) + ': ' + need.join(', ');
+    var due = ymd_(addDays_(parseYmd_(s.Date), -14)); if (due < t) due = t;
+    if (!task) { save_(null, 'Tasks', { Task: text, Owner: s.Organizer || 'Bishopric', Organization: 'Bishopric', Due: due, Status: 'Not started', Source: 'Sacrament plan', Notes: key + '. Sunday › that date › Suggest speakers, then send the invitations by text.', Created: t }, { system: true, quiet: true }); made++; }
+    else if (task.Status !== 'Done' && (task.Task !== text || (s.Organizer && task.Owner !== s.Organizer))) save_(null, 'Tasks', { ID: task.ID, Task: text, Owner: s.Organizer || task.Owner }, { system: true, quiet: true });
+  });
+  return made + ' reminders made, ' + closed + ' closed';
+}
+
+/* Each month: ask every president for next month's calendar (on calendar_ask_day), then share the whole ward's month (on the 1st). */
+function monthlyCalendar_() {
+  var d = today_(), t = ymd_(d), day = d.getDate(), askDay = +setting_('calendar_ask_day') || 20, made = 0;
+  var T = rows_('Tasks').filter(function (x) { return x.Source === 'Monthly calendar'; });
+  var have = function (key) { return T.some(function (x) { return String(x.Notes || '').indexOf(key) >= 0; }); };
+  var nm = new Date(d.getFullYear(), d.getMonth() + 1, 1), nmName = Utilities.formatDate(nm, tz_(), 'MMMM'), nmKey = 'Month ' + Utilities.formatDate(nm, tz_(), 'yyyy-MM');
+  if (day >= askDay && !have(nmKey + ' ask')) {
+    save_(null, 'Tasks', { Task: 'Ask each organization president for the ' + nmName + ' calendar', Owner: 'Executive secretary', Organization: 'Ward', Due: ymd_(addDays_(d, 5)), Status: 'Not started', Source: 'Monthly calendar',
+      Notes: nmKey + ' ask. Text to send: "Hi! Could you send me your ' + nmName + ' calendar (activities, dates, times and places)? A photo, a printout or a quick list is perfect. Thank you!" Forward what comes back to Claude to add it to the Hub.', Created: t }, { system: true, quiet: true }); made++;
+  }
+  var tmKey = 'Month ' + Utilities.formatDate(d, tz_(), 'yyyy-MM');
+  if (day <= 7 && !have(tmKey + ' share')) {
+    save_(null, 'Tasks', { Task: 'Share the ' + Utilities.formatDate(d, tz_(), 'MMMM') + ' ward calendar with ward council and the presidents (Calendar › Print month)', Owner: 'Executive secretary', Organization: 'Ward', Due: ymd_(addDays_(d, 3)), Status: 'Not started', Source: 'Monthly calendar', Notes: tmKey + ' share', Created: t }, { system: true, quiet: true }); made++;
+  }
+  return made + ' calendar to-dos';
+}
+
+/* Yearly to-dos (Repeat = Yearly): once one is marked done, next year's copy is made with the same wording and a due date a year later. */
+function yearlyTasks_() {
+  var T = rows_('Tasks'), made = 0, t = ymd_(today_());
+  T.filter(function (x) { return x.Repeat === 'Yearly' && x.Status === 'Done' && /^\d{4}-\d\d-\d\d$/.test(String(x.Due)); }).forEach(function (x) {
+    var p = x.Due.split('-'), due = (+p[0] + 1) + '-' + p[1] + '-' + p[2];
+    if (!T.some(function (y) { return y.Task === x.Task && y.Due === due; })) {
+      save_(null, 'Tasks', { Task: x.Task, Owner: x.Owner, Organization: x.Organization, Due: due, Status: 'Not started', Source: x.Source, Notes: x.Notes, Created: t, Repeat: 'Yearly' }, { system: true, quiet: true }); made++;
+    }
+    save_(null, 'Tasks', { ID: x.ID, Repeat: '' }, { system: true, quiet: true });
+  });
+  return made + ' yearly to-dos made';
 }
 
 // ===== END OF WARD HUB ENGINE (if you can see this line, you copied everything) =====
