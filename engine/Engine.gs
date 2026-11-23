@@ -131,7 +131,7 @@ var SCHEMA = {"tabs":[
   ["permit_online", "Youth", "Parents can sign permission forms online (Yes/No)", "Yes", "Leaders text each family a personal link. Signed forms are saved as PDFs in Drive \u203a Ward Hub permission forms (private); health answers are never put in the spreadsheet"],
   ["permit_link_days", "Youth", "Online form links keep working this many days after the activity", "7", "After that the link says the form is closed"]
 ]};
-var VERSION = '2.17.0';
+var VERSION = '2.17.1';
 
 /* ---------------- entry points ---------------- */
 function doGet(e) {
@@ -202,7 +202,9 @@ function toOut_(v, type) {
 function toIn_(v, type) {
   if (v === null || v === undefined) return '';
   if (type === 'bool') return (v === true || /^(yes|true|1)$/i.test(String(v))) ? 'Yes' : '';
-  if ((type === 'date' || type === 'dateid') && /^\d{4}-\d\d-\d\d$/.test(String(v))) { var p = String(v).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  /* A date goes in as the words "2026-11-29": Sheets reads it as that day in the spreadsheet's own time zone, so the sheet shows
+     the right day even when the spreadsheet's time zone differs from the ward's (a Date object at Utah midnight showed as the day before). */
+  if ((type === 'date' || type === 'dateid') && /^\d{4}-\d\d-\d\d$/.test(String(v))) return String(v);
   if (type === 'number') return v === '' ? '' : Number(v);
   if (type === 'json' && typeof v !== 'string') return JSON.stringify(v);
   if ((type === 'text' || type === 'key') && /^\s*\d{1,2}:\d\d\s*([ap]\.?m\.?)?\s*$/i.test(String(v))) return "'" + String(v).trim(); // keep "9:30 AM" as words, not a time value
@@ -4459,7 +4461,29 @@ ACTIONS.visits = function (req, me) {
 
 
 /* ================= One-time repairs (run by setUp; safe to repeat) ================= */
+/* Dates the Hub saved before 2.17.1 sit at 11 PM the day before in the spreadsheet's time zone (they read right in the Hub but
+   look a day early in the sheet). Rewrite each as its Hub date so both agree. One write per column; runs with Set up. */
+function fixDateCells_() {
+  var stz = ss_().getSpreadsheetTimeZone(), n = 0;
+  SCHEMA.tabs.forEach(function (d) {
+    var sh = ss_().getSheetByName(d.name); if (!sh || sh.getLastRow() < 2) return;
+    var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+    d.cols.forEach(function (c) {
+      if (c[1] !== 'date' && c[1] !== 'dateid') return;
+      var j = head.indexOf(c[0]); if (j < 0) return;
+      var rng = sh.getRange(2, j + 1, sh.getLastRow() - 1, 1), vals = rng.getValues(), ch = false;
+      vals = vals.map(function (r) {
+        var v = r[0];
+        if (v instanceof Date && v.getFullYear() > 1900 && Utilities.formatDate(v, stz, 'HH:mm') !== '00:00') { ch = true; n++; return [ymd_(v)]; }
+        return [v];
+      });
+      if (ch) { rng.setValues(vals); bump_(d.name); }
+    });
+  });
+  return n;
+}
 function repairs_() {
+  try { var nd = fixDateCells_(); if (nd) log_('Hub', 'repair', '', '', nd + ' dates rewritten so the sheet shows the same day as the Hub'); } catch (e) { log_('Hub', 'repair', '', '', 'dates: ' + e); }
   // Names that came over as "Last, First" (two-word last names) become "First Last".
   rows_('People').forEach(function (p) {
     if (String(p.Name).indexOf(',') >= 0 && p['Sort name'] && String(p['Sort name']).indexOf(',') > 0) {

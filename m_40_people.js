@@ -39,8 +39,37 @@
   function orgList() {
     const { esc, I, ORGCOLOR } = WH, me = WH.S.boot.me, box = document.getElementById('pbody');
     const mine = WH.isBish() || WH.can('clerk') ? ORGS : [...new Set((me.orgs || []).concat(me.teachOrgs || []))];
-    box.innerHTML = mine.length ? `<div class="list">${mine.map(o => `<button class="row ic" data-go="#/x/org/${encodeURIComponent(o)}"><span class="icon" style="background:${ORGCOLOR[o] || '#8E8E93'}">${esc(o.split(' ').map(w => w[0]).join('').slice(0, 2))}</span><div class="main"><div class="t">${esc(o)}</div></div>${I.chev}</button>`).join('')}</div>` : '<div class="list"><div class="empty">You\'ll see your organization here.</div></div>';
+    const chart = WH.isBish() || WH.can('clerk') ? `<div class="list" style="margin-bottom:12px"><button class="row ic" data-go="#/x/wardchart"><span class="icon" style="background:#2f5d7c">All</span><div class="main"><div class="t">Whole ward chart</div><div class="s">Every calling by organization · printable</div></div>${I.chev}</button></div>` : '';
+    box.innerHTML = chart + (mine.length ? `<div class="list">${mine.map(o => `<button class="row ic" data-go="#/x/org/${encodeURIComponent(o)}"><span class="icon" style="background:${ORGCOLOR[o] || '#8E8E93'}">${esc(o.split(' ').map(w => w[0]).join('').slice(0, 2))}</span><div class="main"><div class="t">${esc(o)}</div></div>${I.chev}</button>`).join('')}</div>` : '<div class="list"><div class="empty">You\'ll see your organization here.</div></div>');
   }
+
+  /* ---------- whole ward chart: every current calling by organization (bishopric and clerks) ---------- */
+  const CH_RANK = [/^bishop$/i, /bishopric first/i, /bishopric second/i, /^ward executive secretary/i, /assistant executive/i, /^ward clerk/i, /assistant clerk/i, /president$/i, /first counselor$/i, /second counselor$/i, /first assistant$/i, /second assistant$/i, /(^|[^t] )secretary$/i, /assistant secretary$/i, /ministering secretary$/i, /coordinator$/i, /adviser|advisor/i, /teacher/i];
+  const chRank = c => { const i = CH_RANK.findIndex(r => r.test(c)); return i < 0 ? 99 : i; };
+  WH.routes.wardchart = {
+    tab: 'people',
+    view() {
+      const { esc } = WH;
+      WH.screen('Whole ward chart', '', WH.skeleton(6), { back: '#/people/orgs', backLabel: 'People' });
+      WH.cached('people', 'list', { tabs: ['People', 'Callings'] }, d => {
+        const body = document.getElementById('body'); if (!body) return;
+        if (!d) return; if (d.error) { body.innerHTML = WH.errorBox(d.error); return; }
+        const list = (d.data.Callings || []).filter(c => c.Person && c.Organization !== 'Other unit' && !/Released|Proposed|Open/.test(c.Status));
+        const seen = {}, by = {};
+        list.forEach(c => { const k = c.Organization + '|' + c.Person + '|' + String(c.Calling).toLowerCase(); if (seen[k]) return; seen[k] = 1; (by[c.Organization] = by[c.Organization] || []).push(c); });
+        const orgs = ORGS.concat(['Stake']).filter(o => by[o]).concat(Object.keys(by).filter(o => !ORGS.includes(o) && o !== 'Stake'));
+        const short = (c, o) => String(c).replace(new RegExp('^(' + o.replace(/&/g, '&') + '|EQ|Bishopric) ', 'i'), '').replace(/^./, x => x.toUpperCase());
+        let h = `<p class="foot" style="margin:0 4px 10px">${list.length} callings now serving, from LCR plus changes made in the Hub. Callings held in another unit are left out.</p><div class="btns noprint"><button class="btn gray" data-act="chartPrint">Print</button></div>`;
+        orgs.forEach(o => {
+          const rows = by[o].slice().sort((a, b) => chRank(a.Calling) - chRank(b.Calling) || String(a.Group || '').localeCompare(String(b.Group || '')) || String(a.Calling).localeCompare(String(b.Calling)) || String(a.Person).localeCompare(String(b.Person)));
+          h += `<div class="section-h"><span>${esc(o === 'Stake' ? 'Stake callings held by ward members' : o)}</span><span>${rows.length}</span></div><div class="list">` +
+            rows.map(c => `<button class="row" data-act="person" data-name="${esc(c.Person)}"><div class="main"><div class="t">${esc(c.Person)}</div><div class="s">${esc(short(c.Calling, o))}${c.Group && !String(c.Calling).includes(c.Group) ? ' · ' + esc(c.Group) : ''}</div></div></button>`).join('') + '</div>';
+        });
+        body.innerHTML = h;
+      });
+    }
+  };
+  WH.act.chartPrint = () => window.print();
 
   /* ---------- one organization ---------- */
   let O = null;
