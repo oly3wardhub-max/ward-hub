@@ -169,3 +169,9 @@ button.row:active,a.row:active{background:var(--card2)}
 .qbtn{display:flex;align-items:center;gap:10px;border:0;background:var(--card);border-radius:14px;padding:12px;min-height:56px;font-size:16px;font-weight:600;color:var(--text);text-align:left;cursor:pointer}
 .qbtn:active{background:var(--card2)}
 @media (min-width:600px){.quick{grid-template-columns:repeat(4,1fr)}}
+details.tkgrp>summary{list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+details.tkgrp>summary::-webkit-details-marker{display:none}
+details.tkgrp>summary>span:first-child::before{content:'';display:inline-block;width:7px;height:7px;margin:0 8px 1px 2px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+details.tkgrp[open]>summary>span:first-child::before{transform:rotate(45deg)}
+details.tkgrp .tkn{font-size:13px;color:var(--sub);text-transform:none}
+details.tkgrp:not([open])>summary{margin-bottom:0}

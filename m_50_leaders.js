@@ -102,15 +102,40 @@
       WH.call('tasks', {}).then(d => { TK = d; drawTasks(); }).catch(err);
     }
   };
+  /* Open tasks are grouped: overdue, this week and next week (weeks end on Sunday), then one group per month, then no date.
+     The near groups start open and later months start closed; each viewer's choice is remembered on their phone. */
+  function tkWeekEnd(n) { const d = WH.today(); d.setDate(d.getDate() + ((7 - d.getDay()) % 7) + 7 * n); return WH.ymd(d); }
+  function tkGroups(list, t) {
+    const w0 = tkWeekEnd(0), w1 = tkWeekEnd(1), byDue = (a, b) => a.Due < b.Due ? -1 : a.Due > b.Due ? 1 : 0;
+    const groups = [], add = (k, label, open, items) => { if (items.length) groups.push({ k, label, open, items }); };
+    const dated = list.filter(x => x.Due).sort(byDue);
+    add('over', 'Overdue', true, dated.filter(x => x.Due < t));
+    add('w0', 'This week · through ' + WH.fmt(w0, { weekday: 'short', month: 'short', day: 'numeric' }), true, dated.filter(x => x.Due >= t && x.Due <= w0));
+    const n1 = WH.pd(w0); n1.setDate(n1.getDate() + 1);
+    add('w1', 'Next week · ' + WH.fmt(WH.ymd(n1)) + ' – ' + WH.fmt(w1), true, dated.filter(x => x.Due > w0 && x.Due <= w1));
+    const later = dated.filter(x => x.Due > w1), months = [];
+    later.forEach(x => { const m = x.Due.slice(0, 7); if (!months.includes(m)) months.push(m); });
+    months.forEach(m => {
+      const name = WH.pd(m + '-01').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      add('m' + m, (m === w1.slice(0, 7) ? 'Later in ' : '') + name, false, later.filter(x => x.Due.slice(0, 7) === m));
+    });
+    add('none', 'No due date', false, list.filter(x => !x.Due));
+    return groups;
+  }
+  function tkOpenState() { try { return JSON.parse(localStorage.getItem('wh:tkopen') || '{}'); } catch (e) { return {}; } }
+  function tkIsOpen(g) { const s = tkOpenState(); return g.k in s ? !!s[g.k] : g.open; }
+  function tkRemember(k, open) { try { const s = tkOpenState(); s[k] = open; localStorage.setItem('wh:tkopen', JSON.stringify(s)); } catch (e) { } }
   function drawTasks() {
     const { esc, I, rel, ymd, today } = WH, t = ymd(today());
     document.querySelectorAll('.tkadd').forEach(x => x.innerHTML = `<button class="btn small" data-act="tkNew">${I.plus} Add</button>`);
     const list = TK.tasks.filter(x => x.Status !== 'Done' && (!tkMine || x.mine));
     const done = TK.tasks.filter(x => x.Status === 'Done' && (!tkMine || x.mine)).slice(-10).reverse();
     let h = `<div class="seg" style="margin-bottom:12px"><button class="${tkMine ? 'on' : ''}" data-act="tkMine" data-v="1">Mine</button><button class="${!tkMine ? 'on' : ''}" data-act="tkMine" data-v="0">Everyone's</button></div>`;
-    h += list.length ? '<div class="list">' + list.map(x => `<button class="row wrap" data-act="tkOpen" data-id="${esc(x.ID)}"><span class="check" data-act="tkDone" data-id="${esc(x.ID)}"></span><div class="main"><div class="t">${esc(x.Task)}</div><div class="s">${[tkMine ? '' : x.Owner, x.Organization, x.Status !== 'Not started' ? x.Status : ''].filter(Boolean).map(esc).join(' · ')}</div></div>${x.Due ? `<span class="chip ${x.Due < t ? 'red' : rel(x.Due) === 'Today' ? 'orange' : ''}">${esc(rel(x.Due))}</span>` : ''}</button>`).join('') + '</div>' : `<div class="list"><div class="empty">${tkMine ? 'Nothing on your list.' : 'No open tasks.'}</div></div>`;
+    const rowH = x => `<button class="row wrap" data-act="tkOpen" data-id="${esc(x.ID)}"><span class="check" data-act="tkDone" data-id="${esc(x.ID)}"></span><div class="main"><div class="t">${esc(x.Task)}</div><div class="s">${[tkMine ? '' : x.Owner, x.Organization, x.Status !== 'Not started' ? x.Status : ''].filter(Boolean).map(esc).join(' · ')}</div></div>${x.Due ? `<span class="chip ${x.Due < t ? 'red' : rel(x.Due) === 'Today' ? 'orange' : ''}">${esc(x.Due < t || x.Due <= tkWeekEnd(0) ? rel(x.Due) : WH.fmt(x.Due))}</span>` : ''}</button>`;
+    h += list.length ? tkGroups(list, t).map(g => `<details class="tkgrp" data-k="${g.k}"${tkIsOpen(g) ? ' open' : ''}><summary class="section-h"><span>${esc(g.label)}</span><span class="tkn">${g.items.length}</span></summary><div class="list">${g.items.map(rowH).join('')}</div></details>`).join('') : `<div class="list"><div class="empty">${tkMine ? 'Nothing on your list.' : 'No open tasks.'}</div></div>`;
     if (done.length) h += `<div class="section-h"><span>Recently done</span></div><div class="list">${done.map(x => `<div class="row done"><span class="check on"></span><div class="main"><div class="t">${esc(x.Task)}</div></div></div>`).join('')}</div>`;
     document.getElementById('body').innerHTML = h;
+    document.querySelectorAll('#body details.tkgrp').forEach(d => d.addEventListener('toggle', () => tkRemember(d.dataset.k, d.open)));
   }
   async function taskForm(t, after) {
     await WH.loadNames();
