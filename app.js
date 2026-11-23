@@ -3,7 +3,7 @@
   'use strict';
   const WH = window.WH = window.WH || {};
   WH.routes = WH.routes || {}; WH.tabViews = WH.tabViews || {}; WH.act = WH.act || {}; WH.more = WH.more || []; WH.ready = WH.ready || []; WH.sundayExtras = WH.sundayExtras || [];
-  const VERSION = '2.18.0';
+  const VERSION = '2.18.1';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const store = {
@@ -271,9 +271,9 @@
         <div class="field"><label style="width:auto;flex:1">High councilor here</label><select data-sfield="High council"><option value="">No</option>${[set.high_council].filter(Boolean).map(n => `<option ${s['High council'] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
         <div class="field"><label style="width:auto;flex:1">Stake business</label><span class="toggle"><input type="checkbox" data-sfield="Stake business" ${s['Stake business'] ? 'checked' : ''}><span></span></span></div></div>`;
       const presiding = s['Stake visitor'] || s.Presiding || set.presiding_default || 'the bishop';
-      /* The conductor says their own name; when the bishop conducts he uses his title (Settings › Presiding). */
+      /* The conductor says their own name: "I am Brother <full name>"; when the bishop conducts he uses his title (Settings › Presiding). */
       const bishopName = set.bishop || '', bishopTitle = set.presiding_default || 'the bishop';
-      const conductor = s.Conducting ? (s.Conducting === bishopName ? bishopTitle : s.Conducting) : '[your name]';
+      const conductor = s.Conducting ? (s.Conducting === bishopName ? bishopTitle : (/^(Brother|Sister|President|Bishop|Elder) /.test(s.Conducting) ? s.Conducting : 'Brother ' + s.Conducting)) : '[your name]';
       const presLine = conductor === presiding ? `I am ${esc(conductor)}, presiding and conducting today.` : `I am ${esc(conductor)}, and ${esc(presiding)} is presiding.`;
       const welcomeBits = [presLine];
       if (s['High council']) welcomeBits.push(`We also welcome ${esc(s['High council'])} of the high council.`);
